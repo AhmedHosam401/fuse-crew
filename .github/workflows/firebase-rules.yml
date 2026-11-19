@@ -1,0 +1,45 @@
+# Publishes database.rules.json to the Firebase Realtime Database of project "fuse-crew".
+# Runs when database.rules.json changes on main, or by hand: Actions -> Deploy Firebase rules -> Run workflow.
+# Needs ONE repository secret: FIREBASE_SERVICE_ACCOUNT (the whole service-account JSON key).
+name: Deploy Firebase rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - database.rules.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-rules
+  cancel-in-progress: false
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the rules file is valid JSON
+        run: python3 -c "import json; json.load(open('database.rules.json')); print('database.rules.json is valid JSON')"
+
+      - name: Publish the rules
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA_JSON" ]; then
+            echo "::error::The secret FIREBASE_SERVICE_ACCOUNT is missing (Settings -> Secrets and variables -> Actions)."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx --yes firebase-tools@15.34.2 deploy --only database --project fuse-crew --non-interactive
+
+      - name: Remove the key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"
