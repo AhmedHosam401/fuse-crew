@@ -173,7 +173,12 @@ function renderPlay() {
   region('gest', role === 'mute' || role === 'deaf' ? V.gestHTML(role, gestures) : '');
   region('log', role === 'deaf' ? V.deafHTML() : V.logHTML(chat, players));
   region('say', role === 'mute' ? V.muteHTML() : V.sayHTML());
-  region('over', V.overHTML({ count: countdown, roles, game: c.game, isHost: S.room.host === S.uid, level: c.r.level, canRoom: !S.local }));
+  // The 5-second "get ready" sheet is drawn ONCE per round (its key has no digits) and only the number is patched in place;
+  // redrawing it every second restarted its fade-in and made the whole sheet blink.
+  region('over', V.overHTML({ count: countdown, roles, game: c.game, isHost: S.room.host === S.uid, level: c.r.level, canRoom: !S.local }),
+    countdown > 0 ? `deal|${c.r.id}|${roles.join(',')}` : undefined);
+  const cd = document.getElementById('cd');
+  if (cd && cd.textContent !== String(countdown)) cd.textContent = String(countdown);
   const box = document.getElementById('logbox');
   if (box) box.scrollTop = box.scrollHeight;
   fx(c);

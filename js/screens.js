@@ -206,10 +206,12 @@ export const sayHTML = () => `<div class="say"><input id="say" class="input" max
 // ---------------------------------------------------------------- overlays
 export function overHTML(o) {
   if (o.count > 0) {
+    // one phone holding all three roles (practice): smaller cards so the whole deal fits on the screen
+    const compact = o.roles.length > 1;
     return `<div class="overlay"><div class="sheet">
       <div class="muted">${t('youAre')}</div>
-      ${o.roles.map((r) => `<div class="deal" style="color:${ROLE_COLOR[r]}">${avatar(r, 96)}<h2>${roleName(r)}</h2><p class="muted">${t('desc_' + r)}</p></div>`).join('')}
-      <div class="timer">${o.count}</div><div class="muted">${t('ready')}</div></div></div>`;
+      ${o.roles.map((r) => `<div class="deal${compact ? ' compact' : ''}" style="color:${ROLE_COLOR[r]}">${avatar(r, compact ? 56 : 96)}<div class="dtx"><h2>${roleName(r)}</h2><p class="muted">${t('desc_' + r)}</p></div></div>`).join('')}
+      <div class="timer" id="cd">${o.count}</div><div class="muted">${t('ready')}</div></div></div>`;
   }
   const g = o.game;
   if (g.status === 'playing') return '';

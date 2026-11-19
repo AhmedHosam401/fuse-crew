@@ -281,6 +281,11 @@ h1, h2, h3, p { margin: 0; }
 .sheet.win h2 { color: var(--good); }
 .sheet.lose h2 { color: var(--bad); }
 .sheet .deal { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.sheet .deal .dtx { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.sheet .deal.compact { flex-direction: row; text-align: start; gap: 14px; }
+.sheet .deal.compact .dtx { align-items: flex-start; flex: 1; }
+.sheet .deal.compact h2 { font-size: 22px; }
+.sheet .deal.compact p { font-size: 13px; }
 .dlg h2 { font-size: 22px; }
 .dlgbtns { margin-top: 4px; }
 .dlgbtns .btn { flex: 1; }
