@@ -3,6 +3,7 @@
 // The game decides per round who may speak / hear through setRules(); it is enforced on BOTH ends of every link:
 //   speak=false -> the local mic track is disabled (silence is sent)
 //   hear=false  -> every incoming <audio> element is muted
+// On top of that the player has two switches of their own (setUserMuted / setUserDeaf); both start ON (mic and audio open).
 import { ICE_SERVERS } from '../rtc-config.js';
 
 export const voiceSupported = () => typeof RTCPeerConnection !== 'undefined';
@@ -13,19 +14,22 @@ export function createVoice(net, code, uid, onChange) {
   const early = new Map();            // "uid:cid" -> ICE messages that arrived before their offer
   const seen = new Set();
   let stream = null; let track = null;
-  let joined = false; let micOk = false; let userMuted = false; let blocked = false;
+  let joined = false; let micOk = false; let userMuted = false; let userDeaf = false; let blocked = false;
   let rules = { speak: true, hear: true };
   let lastPlayers = {}; let unsub = null; let timer = null; let chain = Promise.resolve();
 
+  // `speak` / `hear` are what the game's rules allow; `userMuted` / `userDeaf` are the player's own on/off switches.
+  // A sense is live only when the game allows it AND the player did not switch it off.
   const status = () => ({
-    joined, micOk, userMuted, blocked, speak: rules.speak, hear: rules.hear,
+    joined, micOk, userMuted, userDeaf, blocked, speak: rules.speak, hear: rules.hear,
+    micLive: micOk && rules.speak && !userMuted, earLive: rules.hear && !userDeaf,
     total: peers.size, connected: [...peers.values()].filter((p) => p.pc.connectionState === 'connected').length,
   });
   const emit = () => { if (onChange) onChange(status()); };
 
   function applyRules(silent) {
     if (track) track.enabled = rules.speak && !userMuted;
-    for (const p of peers.values()) if (p.audio) p.audio.muted = !rules.hear;
+    for (const p of peers.values()) if (p.audio) p.audio.muted = !rules.hear || userDeaf;
     if (!silent) emit();
   }
 
@@ -49,7 +53,7 @@ export function createVoice(net, code, uid, onChange) {
       const a = peer.audio || new Audio();
       a.autoplay = true; a.playsInline = true;
       a.srcObject = e.streams[0] || new MediaStream([e.track]);
-      a.muted = !rules.hear;
+      a.muted = !rules.hear || userDeaf;
       peer.audio = a;
       a.play().then(() => { if (blocked) { blocked = false; emit(); } }).catch(() => { blocked = true; emit(); });
     };
@@ -153,6 +157,7 @@ export function createVoice(net, code, uid, onChange) {
       applyRules();
     },
     setUserMuted(v) { userMuted = !!v; applyRules(); },
+    setUserDeaf(v) { userDeaf = !!v; applyRules(); },
     resumeAudio() { peers.forEach((p) => p.audio && p.audio.play().then(() => { blocked = false; emit(); }).catch(() => {})); },
     async leave() {
       if (!joined) return;

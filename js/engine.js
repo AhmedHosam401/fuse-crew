@@ -180,12 +180,46 @@ export function assignRoles(playerIds, rnd) {
   return roles;
 }
 
-// Roles rotate every round so everybody tries every sense. `r` = round number.
+// Roles rotate every round so everybody tries every sense. `r` = round number. (kept for tests / one-phone play)
 export function rotateRoles(playerIds, r) {
   const n = playerIds.length;
   const roles = {};
   ROLES.forEach((role, j) => { roles[role] = playerIds[(j + r) % n]; });
   return roles;
+}
+
+const sameRoles = (a, b) => !!a && !!b && ROLES.every((r) => a[r] === b[r]);
+
+// Room mode "random": a fresh random deal every round. With a previous deal given, we try not to repeat it.
+export function randomRoles(playerIds, rnd, prev) {
+  let roles = assignRoles(playerIds, rnd);
+  for (let i = 0; i < 8 && playerIds.length > 1 && sameRoles(roles, prev); i++) roles = assignRoles(playerIds, rnd);
+  return roles;
+}
+
+// Room mode "pick": `picks` is { role: uid }. Picks of players who are not in the room are ignored.
+// Roles nobody picked (rooms with fewer than 3 players) go to whoever holds the fewest roles, the host first.
+export function pickRoles(playerIds, picks, hostId) {
+  const order = hostId && playerIds.includes(hostId) ? [hostId, ...playerIds.filter((i) => i !== hostId)] : playerIds.slice();
+  const load = {};
+  order.forEach((id) => { load[id] = 0; });
+  const roles = {};
+  for (const role of ROLES) {
+    const id = picks && picks[role];
+    if (id && load[id] !== undefined) { roles[role] = id; load[id] += 1; }
+  }
+  for (const role of ROLES) {
+    if (roles[role]) continue;
+    const id = order.slice().sort((a, b) => (load[a] - load[b]) || (order.indexOf(a) - order.indexOf(b)))[0];
+    roles[role] = id; load[id] += 1;
+  }
+  return roles;
+}
+
+// Pick mode can start once every player in the room holds a role of their own.
+export function everyonePicked(playerIds, picks) {
+  const held = new Set(ROLES.map((r) => picks && picks[r]).filter(Boolean));
+  return playerIds.length > 0 && playerIds.every((id) => held.has(id));
 }
 
 // Who can see / do what (single source of truth for the UI and for the voice rules).

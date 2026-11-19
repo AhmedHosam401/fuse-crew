@@ -3,7 +3,7 @@
 //   • a "demo" backend (localStorage + BroadcastChannel) so you can test with several tabs, no setup
 //
 // API: init() → { mode, uid, now(), get(path), set(path,val), update(path,obj), push(path,val),
-//                 remove(path), on(path,cb) → unsubscribe, onDisconnectSet(path,val) }
+//                 remove(path), on(path,cb) → unsubscribe, onDisconnectSet(path,val), onDisconnectCancel(path) }
 import { FIREBASE_CONFIG } from '../firebase-config.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/11.0.2/';
@@ -18,8 +18,14 @@ export async function createNet() {
   return isFirebaseConfigured() ? createFirebaseNet() : createDemoNet(false);
 }
 
-// One-phone / offline play: pure in-memory, no storage, no network.
-export function createLocalNet() { return createDemoNet(true); }
+// One-phone / offline play: in memory, no network. The tree is mirrored into sessionStorage so a page refresh
+// does not lose the practice round (restore:true picks it up again, otherwise any old copy is dropped).
+const SOLO_KEY = 'fuse-solo-db';
+export function createLocalNet(opts = {}) { return createDemoNet(true, opts); }
+export function hasLocalSave() {
+  try { const v = JSON.parse(sessionStorage.getItem(SOLO_KEY)); return !!(v && v.rooms && v.rooms.SOLO); } catch (e) { return false; }
+}
+export function clearLocalSave() { try { sessionStorage.removeItem(SOLO_KEY); } catch (e) { /* ignore */ } }
 
 // ---------------------------------------------------------------- Firebase
 async function createFirebaseNet() {
@@ -49,11 +55,12 @@ async function createFirebaseNet() {
     remove: (path) => db.remove(r(path)),
     on(path, cb) { return db.onValue(r(path), (s) => cb(s.val())); },
     onDisconnectSet(path, val) { db.onDisconnect(r(path)).set(val); },
+    onDisconnectCancel(path) { db.onDisconnect(r(path)).cancel(); },
   };
 }
 
 // ---------------------------------------------------------------- Demo (same browser, many tabs)
-function createDemoNet(memoryOnly) {
+function createDemoNet(memoryOnly, opts = {}) {
   const KEY = 'fuse-demo-db';
   const bc = !memoryOnly && 'BroadcastChannel' in window ? new BroadcastChannel('fuse-demo') : null;
   let uid = null;
@@ -64,6 +71,9 @@ function createDemoNet(memoryOnly) {
   }
 
   let mem = {};
+  if (memoryOnly) {
+    try { if (opts.restore) mem = JSON.parse(sessionStorage.getItem(SOLO_KEY)) || {}; else sessionStorage.removeItem(SOLO_KEY); } catch (e) { mem = {}; }
+  }
   const load = () => {
     if (memoryOnly) return mem;
     try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; }
@@ -97,7 +107,7 @@ function createDemoNet(memoryOnly) {
     }
   }
   function commit() {
-    if (memoryOnly) mem = tree;
+    if (memoryOnly) { mem = tree; try { sessionStorage.setItem(SOLO_KEY, JSON.stringify(tree)); } catch (e) { /* ignore */ } }
     else { try { localStorage.setItem(KEY, JSON.stringify(tree)); } catch (e) { /* ignore */ } }
     if (bc) bc.postMessage('changed');
     queueMicrotask(notify);
@@ -139,6 +149,7 @@ function createDemoNet(memoryOnly) {
       queueMicrotask(() => { const v = getAt(path); l.last = JSON.stringify(v); cb(clone(v)); });
       return () => { const i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1); };
     },
-    onDisconnectSet(path, val) { disconnect.push({ path, val }); },
+    onDisconnectSet(path, val) { this.onDisconnectCancel(path); disconnect.push({ path, val }); },
+    onDisconnectCancel(path) { for (let i = disconnect.length - 1; i >= 0; i--) if (disconnect[i].path === path) disconnect.splice(i, 1); },
   };
 }

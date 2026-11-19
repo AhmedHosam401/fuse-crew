@@ -2,7 +2,56 @@
 import { COLOR_HEX, SYMBOLS, CODE_COLORS } from './engine.js';
 import { t, colorName, opText } from './i18n.js';
 
-export const ROLE_COLOR = { mute: '#2dd4bf', blind: '#fb923c', deaf: '#a78bfa', none: '#fbbf24' };
+// Role colors live in CSS variables so they can be tuned separately for the light and the dark theme.
+export const ROLE_COLOR = { mute: 'var(--c-mute)', blind: 'var(--c-blind)', deaf: 'var(--c-deaf)', none: 'var(--c-none)' };
+
+// ---------- icons (24x24 line icons, colored by the text color around them) ----------
+const ICONS = {
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+  headphones: '<path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z"/><path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>',
+  slash: '<path d="M3 3l18 18"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  note: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  back: '<path d="M15 18l-6-6 6-6"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  shuffle: '<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>',
+  pick: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
+  download: '<path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+};
+// `off` draws a diagonal slash over the icon (a muted mic, silenced headphones, ...)
+export function icon(name, { size = 22, off = false } = {}) {
+  return `<svg class="ic" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}${off ? ICONS.slash : ''}</svg>`;
+}
+
+// ---------- theme: light / dark ----------
+const THEME_COLOR = { dark: '#14161f', light: '#f4f1ec' };
+export const theme = {
+  get() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; },
+  apply(th) {
+    document.documentElement.dataset.theme = th;
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', THEME_COLOR[th]);
+  },
+  init() {
+    let saved = null;
+    try { saved = localStorage.getItem('fuse-theme'); } catch (e) { /* private mode */ }
+    const sys = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    this.apply(saved === 'light' || saved === 'dark' ? saved : sys);
+  },
+  toggle() {
+    const next = this.get() === 'dark' ? 'light' : 'dark';
+    this.apply(next);
+    try { localStorage.setItem('fuse-theme', next); } catch (e) { /* ignore */ }
+    return next;
+  },
+};
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const fmt = (ms) => {
@@ -23,7 +72,7 @@ export function avatar(role, size = 56) {
   const muffs = role === 'deaf'
     ? '<path d="M18 52Q50 2 82 52" stroke="#374151" stroke-width="7" fill="none"/><rect x="8" y="42" width="16" height="26" rx="8" fill="#374151"/><rect x="76" y="42" width="16" height="26" rx="8" fill="#374151"/>' : '';
   const fuse = '<path d="M50 20q4-12 15-12" stroke="#a16207" stroke-width="4" fill="none" stroke-linecap="round"/><circle cx="66" cy="8" r="5" fill="#fde047"/><circle cx="66" cy="8" r="2.5" fill="#fb923c"/>';
-  return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><circle cx="50" cy="54" r="34" fill="${c}"/><ellipse cx="38" cy="38" rx="9" ry="5" fill="#fff" opacity=".28" transform="rotate(-30 38 38)"/>${eyes}${mouth}${blind}${muffs}${fuse}</svg>`;
+  return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><circle cx="50" cy="54" r="34" style="fill:${c}"/><ellipse cx="38" cy="38" rx="9" ry="5" fill="#fff" opacity=".28" transform="rotate(-30 38 38)"/>${eyes}${mouth}${blind}${muffs}${fuse}</svg>`;
 }
 
 // ---------- deaf: the bomb ----------
