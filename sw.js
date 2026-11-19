@@ -1,6 +1,6 @@
 // Service worker: makes the app installable and lets it open offline (one-phone mode works with no internet).
 // Bump CACHE whenever you deploy a new version so phones pick up the update.
-const CACHE = 'fuse-v4';
+const CACHE = 'fuse-v5';
 const ASSETS = [
   './', 'index.html', 'style.css', 'firebase-config.js', 'rtc-config.js', 'manifest.webmanifest',
   'fonts/cairo-arabic-wght-normal.woff2', 'fonts/cairo-latin-wght-normal.woff2',

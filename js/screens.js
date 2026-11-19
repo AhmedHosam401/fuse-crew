@@ -132,11 +132,11 @@ export function lobbyHTML(room, code, uid, soloLocal, voice) {
 }
 
 // ---------------------------------------------------------------- play: skeleton + regions
-export const playSkeleton = () => `<div id="r-head" class="head"><div id="r-top"></div><div id="r-voice"></div></div>
+export const playSkeleton = () => `<div class="topline playtools">${leaveBtn()}<span class="tools">${themeBtn()}${sfxBtn()}</span></div>
+  <div id="r-head" class="head"><div id="r-top"></div><div id="r-voice"></div></div>
   <div id="r-role"></div><div id="r-main"></div>
   <div id="r-pal"></div><div id="r-gest"></div><div id="r-log"></div><div id="r-say"></div>
   <div class="spacer"></div>
-  <div class="foot">${leaveBtn()}<span class="tools">${themeBtn()}${sfxBtn()}</span></div>
   <div id="r-over"></div>`;
 
 export function topHTML(game, round, bomb, now, shaking) {
@@ -208,7 +208,7 @@ export function overHTML(o) {
   if (o.count > 0) {
     // one phone holding all three roles (practice): smaller cards so the whole deal fits on the screen
     const compact = o.roles.length > 1;
-    return `<div class="overlay"><div class="sheet">
+    return `<div class="overlay instant"><div class="sheet">
       <div class="muted">${t('youAre')}</div>
       ${o.roles.map((r) => `<div class="deal${compact ? ' compact' : ''}" style="color:${ROLE_COLOR[r]}">${avatar(r, compact ? 56 : 96)}<div class="dtx"><h2>${roleName(r)}</h2><p class="muted">${t('desc_' + r)}</p></div></div>`).join('')}
       <div class="timer" id="cd">${o.count}</div><div class="muted">${t('ready')}</div></div></div>`;

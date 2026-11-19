@@ -22,7 +22,7 @@
   --c-mute: #4fd1c1; --c-blind: #fb9250; --c-deaf: #a99cf7; --c-none: #e8c25f;
   --glow: rgba(244, 162, 89, .13);
   --shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 10px 28px -12px rgba(0, 0, 0, .6);
-  --overlay: rgba(8, 10, 18, .72);
+  --overlay: rgba(8, 10, 18, .84);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -33,7 +33,7 @@
   --c-mute: #0e8f84; --c-blind: #cf5f14; --c-deaf: #6650d1; --c-none: #b88a14;
   --glow: rgba(238, 138, 58, .16);
   --shadow: 0 1px 2px rgba(60, 45, 20, .06), 0 10px 26px -14px rgba(60, 45, 20, .28);
-  --overlay: rgba(40, 34, 24, .5);
+  --overlay: rgba(40, 34, 24, .66);
 }
 :root { --r: 20px; --font: 'Cairo', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif; }
 
@@ -46,7 +46,6 @@ html, body {
 body {
   overscroll-behavior: none; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   background: radial-gradient(900px 420px at 50% -120px, var(--glow), transparent 70%), var(--bg);
-  background-attachment: fixed;
 }
 input, textarea { -webkit-user-select: text; user-select: text; }
 button { font: inherit; color: inherit; }
@@ -94,8 +93,7 @@ h1, h2, h3, p { margin: 0; }
 .err { color: var(--bad); font-size: 14px; min-height: 18px; text-align: center; }
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 11px; border-radius: 99px; background: var(--surface2); font-size: 12px; font-weight: 700; color: var(--text2); }
 .badge.ok { color: var(--good); }
-.topline, .foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.foot { flex: none; }
+.topline { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .spacer { flex: 1; }
 .spinner { width: 42px; height: 42px; margin: 6px auto; border-radius: 50%; border: 4px solid var(--surface2); border-top-color: var(--accent); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -273,7 +271,9 @@ h1, h2, h3, p { margin: 0; }
 #r-pal:not(:empty) { position: sticky; bottom: 0; z-index: 4; background: var(--bg); padding: 8px 0 4px; box-shadow: 0 -12px 14px -8px var(--bg); }
 
 /* ---------- result / dialogs ---------- */
-.overlay { position: fixed; inset: 0; background: var(--overlay); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 18px; animation: fade .18s; }
+/* no backdrop-filter: blurring a whole live page is expensive on phones and made the "get ready" sheet show up late */
+.overlay { position: fixed; inset: 0; background: var(--overlay); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 18px; animation: fade .18s; }
+.overlay.instant, .overlay.instant .sheet { animation: none; }   /* the countdown sheet must be on screen in the very first frame */
 @keyframes fade { from { opacity: 0; } }
 .sheet { width: 100%; max-width: 420px; background: var(--surface); border-radius: 28px; padding: 24px; display: flex; flex-direction: column; gap: 14px; text-align: center; max-height: 88dvh; overflow-y: auto; box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .55); animation: rise .22s; }
 @keyframes rise { from { transform: translateY(14px) scale(.98); opacity: 0; } }
