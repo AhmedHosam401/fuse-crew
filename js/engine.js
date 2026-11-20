@@ -13,6 +13,32 @@ export const MAX_STRIKES = 3;
 export const PENALTY_MS = 15000;
 export const ROLES = ['mute', 'deaf', 'blind'];
 
+// ---------- puzzle types and levels ----------
+// The first three puzzles are the "warm-up" ones, the next three arrive one by one in levels 4, 5 and 6.
+export const MODULE_TYPES = ['wires', 'symbols', 'code', 'lamps', 'button', 'morse'];
+export const LAMP_COLORS = ['red', 'blue', 'yellow', 'green'];          // lamp 1..4
+export const BTN_BODIES = ['red', 'blue', 'yellow', 'white'];
+export const BTN_STRIPS = ['red', 'blue', 'yellow', 'green', 'white'];
+export const HOLD_MS = 500;                                              // a press at least this long counts as "hold"
+export const LEVEL_COUNT = 10;
+const SECS = { wires: 45, symbols: 50, code: 60, lamps: 90, button: 60, morse: 80 };   // time budget per puzzle, seconds
+// mods = the puzzles of the level; strikes = how many mistakes blow the bomb; timeX = time multiplier; fog = the bomb
+// disappears from the Deaf's screen every few seconds; tag = what makes the level special (shown in the level list)
+export const LEVELS = [
+  null,
+  { mods: ['wires'] },
+  { mods: ['wires', 'symbols'] },
+  { mods: ['wires', 'symbols', 'code'] },
+  { mods: ['lamps'] },
+  { mods: ['lamps', 'button'] },
+  { mods: ['lamps', 'button', 'morse'] },
+  { mods: MODULE_TYPES, timeX: 0.7, tag: 'race' },
+  { mods: MODULE_TYPES, strikes: 2, timeX: 0.95, tag: 'sudden' },
+  { mods: MODULE_TYPES, fog: true, tag: 'fog' },
+  { mods: [...MODULE_TYPES, 'lamps', 'morse'], strikes: 2, fog: true, timeX: 0.85, tag: 'finale' },
+];
+export const levelDef = (level) => LEVELS[Math.max(1, Math.min(LEVEL_COUNT, (level | 0) || 1))];
+
 // ---------- helpers ----------
 export function mulberry32(a) {
   return function () {
@@ -47,7 +73,29 @@ export function makeManual(seed) {
   ], rnd);
   const code = {};
   CODE_COLORS.forEach((c, i) => { code[c] = pool[i]; });
-  return { wires, symbols, code };
+  // lamps[s][n-1] = the button to press when lamp n flashed and the bomb already has s mistakes (s = 0, 1, 2+)
+  const lamps = [0, 1, 2].map(() => shuffle([1, 2, 3, 4], rnd));
+  // button: the body color says tap or hold; for a hold, the strip color says which digit must be in the seconds
+  const bodies = shuffle(BTN_BODIES, rnd);
+  const act = {}; bodies.forEach((b, i) => { act[b] = i < 2 ? 'tap' : 'hold'; });
+  const digits = shuffle([1, 2, 3, 4, 5], rnd);
+  const hold = {}; BTN_STRIPS.forEach((c, i) => { hold[c] = digits[i]; });
+  // morse[i] = the digit for the flash group whose short(0)/long(1) pattern read as a binary number is i
+  const morse = shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], rnd).slice(0, 8);
+  return { wires, symbols, code, lamps, button: { act, hold }, morse };
+}
+
+export const lampTarget = (manual, m, strikes, p) => manual.lamps[Math.min(strikes, 2)][m.data.flashes[p] - 1];
+export const morseIndex = (bits) => bits.reduce((a, b) => a * 2 + b, 0);
+// the seconds part of the timer as the players read it ("0:07" -> "07")
+export function secondsText(game, now) {
+  const s = Math.ceil(Math.max(0, remainingMs(game, now)) / 1000);
+  return String(s % 60).padStart(2, '0');
+}
+export function buttonOk(m, held, game, now) {
+  const long = held >= HOLD_MS;
+  if (m.solution.mode === 'tap') return !long;
+  return long && secondsText(game, now).includes(String(m.solution.digit));
 }
 
 export function applyOp(op, n) {
@@ -69,44 +117,62 @@ export function solveWires(manual, wires) {
   return wires.length - 1;
 }
 
-export function moduleCount(level) { return Math.min(2 + level, 6); }
-export function timeFor(count) { return (50 + 55 * count) * 1000; }
+export const moduleCount = (level) => levelDef(level).mods.length;
+export function timeFor(level) {
+  const def = levelDef(level);
+  const secs = 40 + def.mods.reduce((a, m) => a + SECS[m], 0);
+  return Math.round(secs * (def.timeX || 1)) * 1000;
+}
+
+function buildModule(type, manual, rnd) {
+  if (type === 'wires') {
+    const k = pick([3, 4, 5], rnd);
+    const wires = Array.from({ length: k }, () => pick(COLORS, rnd));
+    return { type, data: { wires }, solution: solveWires(manual, wires) };
+  }
+  if (type === 'symbols') {
+    const symbols = shuffle(SYMBOLS, rnd).slice(0, 4);
+    const order = [0, 1, 2, 3].sort((i, j) => manual.symbols.indexOf(symbols[i]) - manual.symbols.indexOf(symbols[j]));
+    return { type, data: { symbols }, solution: order };
+  }
+  if (type === 'code') {
+    const digits = Array.from({ length: 3 }, () => Math.floor(rnd() * 10));
+    const colors = Array.from({ length: 3 }, () => pick(CODE_COLORS, rnd));
+    return { type, data: { digits, colors }, solution: digits.map((d, i) => applyOp(manual.code[colors[i]], d)) };
+  }
+  if (type === 'lamps') {
+    const flashes = [];
+    while (flashes.length < 4) { const n = 1 + Math.floor(rnd() * 4); if (n !== flashes[flashes.length - 1]) flashes.push(n); }
+    const m = { type, data: { flashes } };
+    m.solution = flashes.map((_, p) => lampTarget(manual, m, 0, p));      // the answer while the bomb has no mistakes yet
+    return m;
+  }
+  if (type === 'button') {
+    const body = pick(BTN_BODIES, rnd); const strip = pick(BTN_STRIPS, rnd);
+    const mode = manual.button.act[body];
+    return { type, data: { body, strip }, solution: { mode, digit: mode === 'hold' ? manual.button.hold[strip] : null } };
+  }
+  // morse: three groups of three flashes, each short (0) or long (1); the three groups are all different
+  const idx = shuffle([0, 1, 2, 3, 4, 5, 6, 7], rnd).slice(0, 3);
+  const groups = idx.map((i) => [i >> 2 & 1, i >> 1 & 1, i & 1]);
+  return { type: 'morse', data: { groups }, solution: idx.map((i) => manual.morse[i]) };
+}
 
 export function buildBomb(seed, level) {
   const manual = makeManual(seed);
   const rnd = mulberry32(((seed ^ 0x51ed270b) + level * 7919) >>> 0);
-  const count = moduleCount(level);
-
-  let types = [];
-  while (types.length < count) types = types.concat(shuffle(['wires', 'symbols', 'code'], rnd));
-  types = types.slice(0, count);
-
-  const modules = types.map((type) => {
-    if (type === 'wires') {
-      const k = pick([3, 4, 5], rnd);
-      const wires = Array.from({ length: k }, () => pick(COLORS, rnd));
-      return { type, data: { wires }, solution: solveWires(manual, wires) };
-    }
-    if (type === 'symbols') {
-      const symbols = shuffle(SYMBOLS, rnd).slice(0, 4);
-      const order = [0, 1, 2, 3].sort(
-        (i, j) => manual.symbols.indexOf(symbols[i]) - manual.symbols.indexOf(symbols[j]),
-      );
-      return { type, data: { symbols }, solution: order };
-    }
-    const digits = Array.from({ length: 3 }, () => Math.floor(rnd() * 10));
-    const colors = Array.from({ length: 3 }, () => pick(CODE_COLORS, rnd));
-    const solution = digits.map((d, i) => applyOp(manual.code[colors[i]], d));
-    return { type: 'code', data: { digits, colors }, solution };
-  });
-
-  return { manual, modules, durationMs: timeFor(count), seed, level };
+  const def = levelDef(level);
+  const modules = shuffle(def.mods, rnd).map((type) => buildModule(type, manual, rnd));
+  return {
+    manual, modules, seed, level, durationMs: timeFor(level), maxStrikes: def.strikes || MAX_STRIKES,
+    fog: !!def.fog, tag: def.tag || null, types: MODULE_TYPES.filter((ty) => modules.some((m) => m.type === ty)),
+  };
 }
 
 // ---------- game state ----------
 export function freshGame(bomb, startedAt) {
   return {
-    status: 'playing', startedAt, durationMs: bomb.durationMs,
+    status: 'playing', startedAt, durationMs: bomb.durationMs, maxStrikes: bomb.maxStrikes || MAX_STRIKES,
     strikes: 0, cur: 0, p: 0, e: '', x: '',
   };
 }
@@ -144,7 +210,14 @@ export function applyAction(bomb, game, action, now) {
       good = true; g.p += 1;
       if (g.p >= m.solution.length) done = true;
     }
-  } else if (m.type === 'code' && action.type === 'key') {
+  } else if (m.type === 'lamps' && action.type === 'lamp') {
+    if (action.i === lampTarget(bomb.manual, m, g.strikes, g.p)) {
+      good = true; g.p += 1;
+      if (g.p >= m.data.flashes.length) done = true;
+    }
+  } else if (m.type === 'button' && action.type === 'btn') {
+    if (buttonOk(m, action.held, game, now)) { good = true; done = true; }
+  } else if ((m.type === 'code' || m.type === 'morse') && action.type === 'key') {
     if (action.d === m.solution[g.e.length]) {
       good = true; g.e += String(action.d);
       if (g.e.length >= m.solution.length) done = true;
@@ -155,7 +228,7 @@ export function applyAction(bomb, game, action, now) {
 
   if (!good) {
     g.strikes += 1;
-    if (g.strikes >= MAX_STRIKES) {
+    if (g.strikes >= (g.maxStrikes || MAX_STRIKES)) {
       g.status = 'lost'; g.reason = 'strikes'; g.endedAt = now;
       return { game: g, result: 'lost' };
     }

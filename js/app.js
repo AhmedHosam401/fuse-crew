@@ -4,6 +4,7 @@ import * as E from './engine.js';
 import { t, setLang, initLang, getLang } from './i18n.js';
 import { sound, toggleSfx, $, paletteHTML, theme } from './ui.js';
 import * as V from './screens.js';
+import { lampLit, morseState, bookChapters } from './senses.js';
 import { createVoice, voiceSupported } from './voice.js';
 
 const app = document.getElementById('app');
@@ -24,7 +25,7 @@ const S = {
   code: null, room: null, unsub: null, leaving: false,
   screen: 'home', skel: '', regions: {},
   name: store.get('fuse-name') || '', codeIn: '', err: '',
-  role: null, mpage: 'wires', ptab: 'colors',
+  role: null, mpage: 'toc', flip: null, ptab: 'colors', gflag: 0, gnoteT: undefined, gnoteRoom: null,
   bombKey: '', bomb: null,
   prevRound: null, prevStrikes: 0, prevCur: 0, endSounded: false, shakeUntil: 0, lastSec: -1,
   installEvt: null, wakeLock: null,
@@ -45,6 +46,13 @@ const gameFrom = (g) => ({
   status: 'playing', strikes: 0, cur: 0, p: 0, ...g, e: String((g && g.e) ?? ''), x: String((g && g.x) ?? ''),
 });
 const listOf = (obj) => Object.values(obj || {}).sort((a, b) => a.t - b.t);
+const keyedList = (obj) => Object.entries(obj || {}).map(([k, v]) => ({ ...v, k })).sort((a, b) => a.t - b.t);
+
+// levels: the highest unlocked level is remembered on this device and travels with the room (the host writes it there)
+const progress = () => Math.min(E.LEVEL_COUNT, Math.max(1, parseInt(store.get('fuse-progress'), 10) || 1));
+const saveProgress = (n) => { if (n > progress()) store.set('fuse-progress', String(Math.min(E.LEVEL_COUNT, n))); };
+const unlockedOf = (room) => Math.min(E.LEVEL_COUNT, Math.max(1, (room && room.unlocked) || 1));
+const levelOf = (room) => Math.min(unlockedOf(room), Math.max(1, (room && room.level) || unlockedOf(room)));
 
 // "I went offline / my voice is gone" writes the server performs when this page disconnects. They must be cancelled when
 // I leave the room on purpose, or the server would re-create a ghost player in a room I already left.
@@ -117,7 +125,19 @@ function toggleEar() {
 const myRoles = () => (S.room && S.room.round ? E.ROLES.filter((x) => S.room.round.roles[x] === S.uid) : []);
 
 // ---------------------------------------------------------------- rendering
+// The Blind's screen is black (in both themes); every other screen follows the theme
+function applySense() {
+  const want = S.screen === 'play' && S.role === 'blind' ? 'blind' : '';
+  const root = document.documentElement;
+  document.body.classList.toggle('playing', S.screen === 'play');
+  if ((root.dataset.sense || '') === want) return;
+  if (want) root.dataset.sense = want; else delete root.dataset.sense;
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', want ? '#000000' : (theme.get() === 'light' ? '#f4f1ec' : '#14161f'));
+}
+
 function render() {
+  applySense();
   if (S.screen === 'boot') return renderBoot();
   if (S.screen === 'home') return renderHome();
   if (S.screen === 'lobby') return renderLobby();
@@ -157,25 +177,31 @@ function renderPlay() {
   if (!roles.includes(S.role)) S.role = roles[0];
   const role = S.role;
   const players = S.room.players || {};
-  const gestures = listOf(S.room.gestures);
+  const gestures = keyedList(S.room.gestures);
   const chat = listOf(S.room.chat);
+  applySense();
   const countdown = c.now < c.game.startedAt ? Math.ceil((c.game.startedAt - c.now) / 1000) : 0;
 
   const shaking = Date.now() < S.shakeUntil;
-  region('top', V.topHTML(c.game, c.r, c.bomb, c.now, shaking), `${c.r.id}|${c.game.strikes}|${c.game.cur}|${shaking}`);
+  region('top', V.topHTML(c.game, c.r, c.bomb, c.now, shaking, role), `${c.r.id}|${c.game.strikes}|${c.game.cur}|${shaking}|${role}`);
   updateClock(c);
   region('role', V.roleHTML(roles, role));
-  region('main', V.mainHTML(role, c.bomb, c.game, S.mpage));
+  // the Mute's book is redrawn only when the page / the mistakes / the round change, so a page flip plays once
+  region('main', V.mainHTML(role, c.bomb, c.game, S.mpage, S.flip), role === 'mute' ? `book|${c.r.id}|${S.mpage}|${Math.min(c.game.strikes, 2)}` : undefined);
+  S.flip = null;
   const restricted = c.game.status === 'playing';
   if (S.voice) S.voice.setRules({ speak: !restricted || E.CAPS[role].speaks, hear: !restricted || E.CAPS[role].hears });
   region('voice', S.local ? '' : V.voiceBarHTML(S.vs, role, restricted));
   region('pal', role === 'mute' ? paletteHTML(S.ptab) : '');
-  region('gest', role === 'mute' || role === 'deaf' ? V.gestHTML(role, gestures) : '');
-  region('log', role === 'deaf' ? V.deafHTML() : V.logHTML(chat, players));
-  region('say', role === 'mute' ? V.muteHTML() : V.sayHTML());
+  const flagged = role === 'deaf' && Date.now() < S.gflag;       // the Mute changed the signals a moment ago
+  region('gest', role === 'mute' || role === 'deaf' ? V.gestHTML(role, gestures, { flagged }) : '');
+  // online with a working mic people TALK: the typed-message box is only for practice (one phone) or when the voice is not available
+  const talking = !S.local && !!S.vs.joined && S.vs.micOk !== false;
+  region('log', role === 'deaf' ? V.deafHTML() : talking ? '' : V.logHTML(chat, players));
+  region('say', role === 'mute' ? V.muteHTML() : talking ? V.speakHTML() : V.sayHTML());
   // The 5-second "get ready" sheet is drawn ONCE per round (its key has no digits) and only the number is patched in place;
   // redrawing it every second restarted its fade-in and made the whole sheet blink.
-  region('over', V.overHTML({ count: countdown, roles, game: c.game, isHost: S.room.host === S.uid, level: c.r.level, canRoom: !S.local }),
+  region('over', V.overHTML({ count: countdown, roles, game: c.game, isHost: S.room.host === S.uid, level: c.r.level, local: S.local }),
     countdown > 0 ? `deal|${c.r.id}|${roles.join(',')}` : undefined);
   const cd = document.getElementById('cd');
   if (cd && cd.textContent !== String(countdown)) cd.textContent = String(countdown);
@@ -188,7 +214,7 @@ function renderPlay() {
 function updateClock(c) {
   const rem = Math.max(0, E.remainingMs(c.game, Math.max(c.now, c.game.startedAt)));
   const timer = document.getElementById('timer');
-  if (!timer) return;
+  if (!timer || timer.classList.contains('hide')) return;          // the Blind has no clock
   const txt = V.fmtTime(rem);
   if (timer.textContent !== txt) timer.textContent = txt;
   timer.classList.toggle('low', rem <= 15000 && c.game.status === 'playing');
@@ -212,7 +238,13 @@ function fx(c) {
   S.prevStrikes = g.strikes; S.prevCur = g.cur;
   if (g.status !== 'playing' && !S.endSounded) {
     S.endSounded = true;
-    if (g.status === 'won') sound.win(); else sound.boom();
+    if (g.status === 'won') {
+      sound.win();
+      const nxt = Math.min(E.LEVEL_COUNT, c.r.level + 1);
+      saveProgress(nxt);
+      // the host opens the next level for the whole room and pre-selects it for the level list
+      if (S.room.host === S.uid && unlockedOf(S.room) < nxt) S.net.update(`rooms/${S.code}`, { unlocked: nxt, level: nxt });
+    } else sound.boom();
     releaseWake();
   }
   const rem = E.remainingMs(g, c.now);
@@ -334,6 +366,8 @@ function onRoom(raw) {
     toast(t('roomClosed')); resetToHome(); return;
   }
   S.room = room;
+  syncLevels(room);
+  watchSignals(room);
   if (S.voice) S.voice.sync(room.players);
   if (room.players[S.uid].online === false) S.net.set(`rooms/${S.code}/players/${S.uid}/online`, true);
   // a reload (or a late "disconnect" from the old page) can clear our voice flag: put it back, others look at it
@@ -343,6 +377,24 @@ function onRoom(raw) {
   render();
 }
 
+// level progress: every device remembers the highest unlocked level; an old room without one gets it from its host
+function syncLevels(room) {
+  if (room.unlocked) saveProgress(room.unlocked);
+  else if (room.host === S.uid) S.net.set(`rooms/${S.code}/unlocked`, progress());
+}
+// The Mute removed a signal: the others get a notice (the signals box is highlighted for a few seconds)
+function watchSignals(room) {
+  const gn = room.gnote && room.gnote.t ? room.gnote.t : 0;
+  if (S.gnoteRoom !== S.code || S.gnoteT === undefined) { S.gnoteRoom = S.code; S.gnoteT = gn; return; }   // first look at this room: no alert
+  if (!gn) { S.gnoteT = 0; return; }
+  if (gn === S.gnoteT) return;
+  S.gnoteT = gn;
+  if (room.gnote.by === S.uid && !S.local) return;                   // I did it myself
+  S.gflag = Date.now() + 7000;
+  sound.tick(); try { navigator.vibrate && navigator.vibrate([40, 60, 40]); } catch (e) { /* ignore */ }
+  if (S.role !== 'mute') toast(t('gChangedToast'));
+}
+
 function resetToHome() {
   if (S.unsub) S.unsub();
   if (S.net && !S.local) disarmDisconnect();
@@ -350,7 +402,7 @@ function resetToHome() {
   S.vs = emptyVoice(); S.voiceAuto = false;
   releaseWake();
   if (S.local) clearLocalSave();
-  Object.assign(S, { unsub: null, code: null, room: null, screen: 'home', skel: '', regions: {}, prevRound: null });
+  Object.assign(S, { unsub: null, code: null, room: null, screen: 'home', skel: '', regions: {}, prevRound: null, gnoteT: undefined, gnoteRoom: null, gflag: 0 });
   if (S.local) { S.net = null; S.local = false; }
   saveRoom(null);
   render();
@@ -364,7 +416,7 @@ async function createRoom() {
       const code = E.randomCode();
       if (await S.net.get('rooms/' + code)) continue;
       await S.net.set('rooms/' + code, {
-        host: S.uid, phase: 'lobby', roundNo: 0, createdAt: S.net.now(), roleMode: 'random',
+        host: S.uid, phase: 'lobby', roundNo: 0, createdAt: S.net.now(), roleMode: 'random', unlocked: progress(), level: progress(),
         players: { [S.uid]: { name, joinedAt: S.net.now(), online: true } },
       });
       return enter(code);
@@ -395,9 +447,8 @@ async function joinRoom() {
 async function startLocal() {
   const name = ($('#name') && $('#name').value.trim().slice(0, 14)) || S.name || (getLang() === 'ar' ? 'أنا' : 'Me');
   S.net = createLocalNet({ restore: false }); S.uid = S.net.uid; S.local = true;
-  await S.net.set('rooms/SOLO', { host: S.uid, phase: 'lobby', roundNo: 0, createdAt: Date.now(), players: { [S.uid]: { name, joinedAt: Date.now(), online: true } } });
-  await enter('SOLO');
-  startRound(1);
+  await S.net.set('rooms/SOLO', { host: S.uid, phase: 'lobby', roundNo: 0, createdAt: Date.now(), unlocked: progress(), level: progress(), players: { [S.uid]: { name, joinedAt: Date.now(), online: true } } });
+  await enter('SOLO');                    // the practice lobby: pick a level, then start
 }
 
 async function leaveRoom() {
@@ -424,6 +475,12 @@ async function leaveRoom() {
 }
 
 // ---------------------------------------------------------------- role choice (lobby)
+function setLevel(n) {
+  const room = S.room;
+  if (!room || room.host !== S.uid || room.phase === 'play') return;
+  if (n < 1 || n > unlockedOf(room)) return;
+  S.net.set(`rooms/${S.code}/level`, n);
+}
 function setRoleMode(mode) {
   if (!S.room || S.room.host !== S.uid || S.room.phase === 'play') return;
   S.net.set(`rooms/${S.code}/roleMode`, mode === 'pick' ? 'pick' : 'random');
@@ -451,13 +508,16 @@ async function startRound(level) {
   if (pick && !E.everyonePicked(ids, V.pickedMap(room))) return;
   const seed = ((Math.random() * 2147483646) >>> 0) + 1;
   const rn = (room.roundNo || 0) + 1;
+  level = Math.max(1, Math.min(E.LEVEL_COUNT, level));
   const bomb = E.buildBomb(seed, level);
   const startedAt = S.net.now() + 5000;
   const roles = pick
     ? E.pickRoles(ids, V.pickedMap(room), room.host)
     : E.randomRoles(ids, E.mulberry32((seed ^ 0xa5a5a5a5) >>> 0), room.round && room.round.roles);
+  level = Math.max(1, Math.min(E.LEVEL_COUNT, level));
   await S.net.update('rooms/' + S.code, {
-    phase: 'play', roundNo: rn, gestures: null, chat: null,
+    phase: 'play', roundNo: rn, gestures: null, chat: null, gnote: null,
+    level, unlocked: Math.max(unlockedOf(room), level),
     round: { id: rn, seed, level, roles, startedAt, game: E.freshGame(bomb, startedAt) },
   });
 }
@@ -486,6 +546,28 @@ function sendGesture(g) {
   sound.blip();
   S.net.push(`rooms/${S.code}/gestures`, { from: S.uid, g, t: S.net.now() });
 }
+// The Mute can take back a signal sent by mistake; a "gnote" tells the others that the signals changed
+const iAmMute = () => S.role === 'mute' && myRoles().includes('mute');
+function signalsChanged() {
+  const n = (S.room.gnote && S.room.gnote.n) || 0;
+  S.net.set(`rooms/${S.code}/gnote`, { t: S.net.now(), by: S.uid, n: n + 1 });
+}
+function delGesture(k) {
+  if (!iAmMute() || !k || !(S.room.gestures && S.room.gestures[k])) return;
+  sound.blip();
+  S.net.remove(`rooms/${S.code}/gestures/${k}`);
+  signalsChanged();
+}
+function undoGesture() {
+  const list = keyedList(S.room.gestures);
+  if (list.length) delGesture(list[list.length - 1].k);
+}
+function clearGestures() {
+  if (!iAmMute() || !S.room.gestures) return;
+  sound.blip();
+  S.net.remove(`rooms/${S.code}/gestures`);
+  signalsChanged();
+}
 function sendSay() {
   const input = document.getElementById('say');
   const text = input && input.value.trim();
@@ -497,6 +579,9 @@ function sendSay() {
 
 // ---------------------------------------------------------------- events
 document.addEventListener('click', (e) => {
+  // keyboard (Enter / Space) on the Blind's controls; real touches are handled by the pointer code below
+  const tk = e.target.closest('[data-tact]');
+  if (tk) { if (e.detail === 0) tactAction(tk, 120); return; }
   const el = e.target.closest('[data-act]');
   if (!el) return;
   if (el.classList.contains('overlay') && e.target.closest('[data-stop]')) return;
@@ -526,17 +611,24 @@ document.addEventListener('click', (e) => {
     case 'audioplay': if (S.voice) S.voice.resumeAudio(); break;
     case 'rolemode': setRoleMode(d.v); break;
     case 'pick': pickRole(d.v); break;
-    case 'start': startRound(1); break;
+    case 'start': startRound(levelOf(S.room)); break;
+    case 'level': setLevel(+d.v); break;
     case 'next': nextRound(); break;
     case 'toroom': backToRoom(); break;
-    case 'role': S.role = d.v; S.regions = {}; saveUi(); render(); break;
-    case 'mpage': S.mpage = d.v; saveUi(); render(); break;
+    case 'role': S.role = d.v; S.regions = {}; S.flip = null; saveUi(); render(); break;
+    case 'mflip': {
+      const c = cur(); if (!c || !d.v) break;
+      const order = bookChapters(c.bomb);
+      S.flip = order.indexOf(d.v) >= order.indexOf(S.mpage) ? 'next' : 'prev';
+      S.mpage = d.v; saveUi(); render(); break;
+    }
+    case 'gdel': delGesture(d.k); break;
+    case 'gundo': undoGesture(); break;
+    case 'gclear': clearGestures(); break;
+    case 'gseen': S.gflag = 0; render(); break;
     case 'ptab': S.ptab = d.v; saveUi(); render(); break;
     case 'gest': sendGesture(d.g); break;
     case 'say': sendSay(); break;
-    case 'cut': doAction({ type: 'cut', i: +d.i }); break;
-    case 'pad': doAction({ type: 'pad', i: +d.i }); break;
-    case 'key': doAction({ type: 'key', d: +d.d }); break;
     default: break;
   }
 });
@@ -556,6 +648,70 @@ document.addEventListener('pointerdown', () => { if (S.voice && S.vs.blocked) S.
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); S.installEvt = e; if (S.screen === 'home') render(); });
 window.addEventListener('appinstalled', () => { S.installEvt = null; if (S.screen === 'home') render(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.screen === 'play') requestWake(); });
+
+// ---------------------------------------------------------------- the Blind's touch screen
+// A short tap does the thing. Holding a finger on an element for a moment does NOT do it: it shows the number the braille
+// stands for (so you can check what you are touching). The big button is different: it reports how long it was held.
+const LONG_PRESS = 450;
+const tactState = { el: null, id: null, t0: 0, timer: 0, revealed: false };
+let revealEl = null;
+function showReveal(txt) {
+  if (!revealEl) { revealEl = document.createElement('div'); revealEl.className = 'reveal'; revealEl.setAttribute('aria-hidden', 'true'); document.body.appendChild(revealEl); }
+  revealEl.textContent = txt; revealEl.classList.add('on');
+}
+function tactAction(el, held) {
+  const d = el.dataset;
+  switch (d.tact) {
+    case 'cut': doAction({ type: 'cut', i: +d.i }); break;
+    case 'pad': doAction({ type: 'pad', i: +d.i }); break;
+    case 'lamp': doAction({ type: 'lamp', i: +d.i }); break;
+    case 'key': doAction({ type: 'key', d: +d.d }); break;
+    case 'btn': doAction({ type: 'btn', held }); break;
+    default: break;
+  }
+}
+const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { /* ignore */ } };
+function tactEnd(fire) {
+  const { el, t0, revealed } = tactState;
+  clearTimeout(tactState.timer);
+  if (revealEl) revealEl.classList.remove('on');
+  if (el) el.classList.remove('down', 'held');
+  Object.assign(tactState, { el: null, id: null, revealed: false });
+  if (fire && el && !revealed) tactAction(el, Date.now() - t0);
+}
+document.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('[data-tact]');
+  if (!el || e.button > 0) return;
+  tactEnd(false);
+  Object.assign(tactState, { el, id: e.pointerId, t0: Date.now(), revealed: false });
+  try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  if (el.dataset.tact === 'btn') {
+    el.classList.add('down');
+    tactState.timer = setTimeout(() => { el.classList.add('held'); buzz(35); }, E.HOLD_MS);   // you feel the moment it counts as a "hold"
+  } else if (el.dataset.reveal) {
+    tactState.timer = setTimeout(() => { tactState.revealed = true; showReveal(el.dataset.reveal); buzz(20); }, LONG_PRESS);
+  }
+}, true);
+document.addEventListener('pointerup', (e) => { if (tactState.el && e.pointerId === tactState.id) tactEnd(true); }, true);
+document.addEventListener('pointercancel', (e) => { if (tactState.el && e.pointerId === tactState.id) tactEnd(false); }, true);
+document.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-tact]')) e.preventDefault(); });
+
+// the Deaf's flashing lamps and morse lamp: drawn from the clock, so they loop on their own
+setInterval(() => {
+  if (S.screen !== 'play') return;
+  const now = Date.now();
+  const lamps = document.querySelector('[data-lamps]');
+  if (lamps) {
+    const lit = lampLit(lamps.dataset.lamps.split(',').map(Number), now);
+    lamps.querySelectorAll('.lamp').forEach((l) => l.classList.toggle('lit', +l.dataset.n === lit));
+  }
+  const mo = document.querySelector('[data-morse]');
+  if (mo) {
+    const st = morseState(mo.dataset.morse.split('|').map((g) => g.split('').map(Number)), now);
+    mo.querySelector('.mlamp').classList.toggle('lit', st.on);
+    mo.querySelectorAll('.mgroups span').forEach((sp) => sp.classList.toggle('on', +sp.dataset.g === st.group));
+  }
+}, 50);
 
 // clock: countdown, timer, timeout — re-render is cheap because regions are diffed
 setInterval(() => { if (S.screen === 'play' && S.room) renderPlay(); }, 250);

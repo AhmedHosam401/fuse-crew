@@ -1,7 +1,8 @@
 // screens.js — pure HTML builders. app.js owns state; these only turn state into markup.
 import { t, getLang } from './i18n.js';
-import { avatar, esc, fmt, ROLE_COLOR, bombHTML, manualHTML, gestureChip, sfx, icon, theme } from './ui.js';
-import { MAX_STRIKES, ROLES, CAPS, remainingMs, everyonePicked } from './engine.js';
+import { avatar, esc, fmt, ROLE_COLOR, gestureChip, sfx, icon, theme } from './ui.js';
+import { bombHTML, controlsHTML, bookHTML } from './senses.js';
+import { MAX_STRIKES, ROLES, CAPS, LEVEL_COUNT, levelDef, timeFor, remainingMs, everyonePicked } from './engine.js';
 
 const roleName = (r) => t('role_' + r);
 const modName = (m) => t('mod_' + m.type);
@@ -75,6 +76,28 @@ export function pickedMap(room) {
   return out;
 }
 
+// the ten levels: a grid (locked ones can't be chosen) and what the chosen level is made of
+export function levelsHTML(room, isHost) {
+  const unlocked = Math.min(LEVEL_COUNT, Math.max(1, room.unlocked || 1));
+  const sel = Math.min(unlocked, Math.max(1, room.level || unlocked));
+  const def = levelDef(sel);
+  const counts = {};
+  def.mods.forEach((m) => { counts[m] = (counts[m] || 0) + 1; });
+  const chips = Object.entries(counts).map(([m, n]) => `<span class="chip">${t('mod_' + m)}${n > 1 ? ` ×${n}` : ''}</span>`).join('');
+  const mins = Math.round(timeFor(sel) / 60000 * 10) / 10;
+  const grid = Array.from({ length: LEVEL_COUNT }, (_, i) => i + 1).map((n) => {
+    const lock = n > unlocked;
+    return `<button class="lvl${n === sel ? ' on' : ''}${lock ? ' locked' : ''}" data-act="level" data-v="${n}" ${isHost && !lock ? '' : 'disabled'} aria-pressed="${n === sel}" aria-label="${t('level', { n })}${lock ? ' · ' + t('lvlLocked') : ''}">${lock ? icon('lock2', { size: 16 }) : n}</button>`;
+  }).join('');
+  return `<div class="card levels"><h3 class="sect">${t('levelsTitle')}</h3>
+    <div class="lvlgrid">${grid}</div>
+    <div class="lvlinfo"><b>${t('level', { n: sel })}${def.tag ? ` · ${t('lvl_' + def.tag)}` : ''}</b>
+      <div class="chips">${chips}</div>
+      <p class="muted">${def.tag ? `${t('lvlDesc_' + def.tag)}<br>` : ''}${t('lvlMeta', { m: mins, s: def.strikes || MAX_STRIKES })}</p></div>
+    ${unlocked < LEVEL_COUNT ? `<p class="muted tip">${t('lvlHowUnlock')}</p>` : `<p class="muted tip">${t('lvlAllOpen')}</p>`}
+    ${isHost ? '' : `<p class="muted">${t('hostPicksLevel')}</p>`}</div>`;
+}
+
 export function lobbyHTML(room, code, uid, soloLocal, voice) {
   const ids = Object.keys(room.players || {}).sort((a, b) => room.players[a].joinedAt - room.players[b].joinedAt);
   const isHost = room.host === uid;
@@ -118,12 +141,13 @@ export function lobbyHTML(room, code, uid, soloLocal, voice) {
     ? `<button class="btn primary" data-act="start" ${canStart ? '' : 'disabled'}>${startLabel}</button>${canStart ? '' : `<p class="muted" style="text-align:center">${t('pickNeed')}</p>`}`
     : `<p class="muted" style="text-align:center">${t('waitHost')}</p>`;
 
-  return `<div class="topline">${leaveBtn()}<span class="badge">${t('lobby')}</span><span class="tools">${themeBtn()}${sfxBtn()}</span></div>
-    <div class="card roomcard"><div class="muted" style="text-align:center">${t('roomCode')}</div>
+  return `<div class="topline">${leaveBtn()}<span class="badge">${soloLocal ? t('practice') : t('lobby')}</span><span class="tools">${themeBtn()}${sfxBtn()}</span></div>
+    ${soloLocal ? '' : `<div class="card roomcard"><div class="muted" style="text-align:center">${t('roomCode')}</div>
       <div class="roomcode">${esc(code)}</div>
-      ${soloLocal ? '' : `<div style="text-align:center;margin-top:8px"><button class="btn small ghost" data-act="copy">${icon('copy', { size: 18 })}<span>${t('shareRoom')}</span></button></div>`}
+      <div style="text-align:center;margin-top:8px"><button class="btn small ghost" data-act="copy">${icon('copy', { size: 18 })}<span>${t('shareRoom')}</span></button></div>
     </div>
-    <div><h3 class="sect">${t('players')} ${n}/3</h3><div class="slots">${slots}</div></div>
+    <div><h3 class="sect">${t('players')} ${n}/3</h3><div class="slots">${slots}</div></div>`}
+    ${levelsHTML(room, isHost)}
     ${modeCard}
     ${picker}
     ${soloLocal ? '' : voiceBarHTML(voice, null, false)}
@@ -139,15 +163,18 @@ export const playSkeleton = () => `<div class="topline playtools">${leaveBtn()}<
   <div class="spacer"></div>
   <div id="r-over"></div>`;
 
-export function topHTML(game, round, bomb, now, shaking) {
+// The Blind sees nothing: no clock, no bar (the others call out the time). He still feels the mistakes.
+export function topHTML(game, round, bomb, now, shaking, role) {
   const rem = Math.max(0, remainingMs(game, Math.max(now, game.startedAt)));
   const pct = Math.max(0, Math.min(100, (rem / bomb.durationMs) * 100));
-  const strikes = [0, 1, 2].map((i) => `<i class="${i < game.strikes ? 'on' : ''}">💥</i>`).join('');
+  const max = game.maxStrikes || MAX_STRIKES;
+  const strikes = Array.from({ length: max }, (_, i) => `<i class="${i < game.strikes ? 'on' : ''}">💥</i>`).join('');
+  const blind = role === 'blind';
   return `<div class="topbar${shaking ? ' shake' : ''}">
     <div class="strikes" title="${t('strikesUsed')}">${strikes}</div>
-    <div class="timer${rem <= 15000 ? ' low' : ''}" id="timer">${fmt(rem)}</div>
+    ${blind ? `<div class="timer hide" id="timer" aria-hidden="true">--:--</div>` : `<div class="timer${rem <= 15000 ? ' low' : ''}" id="timer">${fmt(rem)}</div>`}
     <div class="meta">${t('level', { n: round.level })}<br>${t('module', { a: Math.min(game.cur + 1, bomb.modules.length), b: bomb.modules.length })}</div>
-    <div class="bar"><b id="barfill" style="width:${pct}%"></b></div></div>`;
+    ${blind ? '' : `<div class="bar"><b id="barfill" style="width:${pct}%"></b></div>`}</div>`;
 }
 
 export function roleHTML(myRoles, active) {
@@ -157,41 +184,27 @@ export function roleHTML(myRoles, active) {
   return `${tabs}<div class="rolehead" style="--c:${c}">${avatar(active, 52)}<div><div class="rn">${roleName(active)}</div><div class="rd">${t('desc_' + active)}</div></div></div>`;
 }
 
-export function mainHTML(role, bomb, game, mpage) {
-  const mod = bomb.modules[Math.min(game.cur, bomb.modules.length - 1)];
+export function mainHTML(role, bomb, game, mpage, flip) {
+  const idx = Math.min(game.cur, bomb.modules.length - 1);
+  const mod = bomb.modules[idx];
   if (role === 'deaf') {
-    return `<div class="stage"><div class="cap">${t('bombView')} · ${modName(mod)}</div>${bombHTML(mod)}</div>`;
+    const ctx = { strikes: game.strikes, max: game.maxStrikes || MAX_STRIKES, idx: idx + 1, total: bomb.modules.length, fog: bomb.fog };
+    return `<div class="stage deaf"><div class="cap">${t('bombView')} · ${modName(mod)}</div>${bombHTML(mod, ctx)}</div>`;
   }
-  if (role === 'mute') {
-    const tabs = ['wires', 'symbols', 'code'].map((k) => `<button class="mtab${k === mpage ? ' on' : ''}" data-act="mpage" data-v="${k}">${t('mod_' + k)}</button>`).join('');
-    return `<div class="card"><div class="mtabs" style="margin-bottom:10px">${tabs}</div>${manualHTML(bomb.manual, mpage)}</div>`;
-  }
-  return `<div class="stage"><div class="cap">${t('controls')} · ${modName(mod)}</div>${controlsHTML(mod, game)}</div>`;
+  if (role === 'mute') return bookHTML(bomb, game, mpage, flip);
+  return `<div class="stage blindstage"><div class="cap">${t('controls')} · ${modName(mod)}</div>${controlsHTML(mod, game)}</div>`;
 }
 
-function controlsHTML(mod, game) {
-  if (mod.type === 'wires') {
-    const cut = game.x ? game.x.split(',').map(Number) : [];
-    return `<div class="ctl">${mod.data.wires.map((_, i) =>
-      `<button class="cutbtn${cut.includes(i) ? ' cut' : ''}" data-act="cut" data-i="${i}">${t('wire', { n: i + 1 })}</button>`).join('')}</div>`;
-  }
-  if (mod.type === 'symbols') {
-    const done = mod.solution.slice(0, game.p);
-    return `<div class="padgrid">${[0, 1, 2, 3].map((i) =>
-      `<button class="pad${done.includes(i) ? ' done' : ''}" data-act="pad" data-i="${i}">${i + 1}</button>`).join('')}</div>`;
-  }
-  const n = mod.solution.length;
-  const boxes = Array.from({ length: n }, (_, i) => `<b class="${i < game.e.length ? 'f' : ''}">${game.e[i] ?? ''}</b>`).join('');
-  const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((d) => `<button class="key${d === 0 ? ' keys0' : ''}" data-act="key" data-d="${d}">${d}</button>`).join('');
-  return `<div class="ctl"><div class="cap" style="text-align:center">${t('codeNeeds', { n })}</div><div class="entered">${boxes}</div><div class="keypad">${keys}</div></div>`;
-}
-
-export function gestHTML(role, list) {
-  const label = role === 'mute' ? t('sentLabel') : t('gotLabel');
+// o.flagged = the Mute just changed the signals: the box is highlighted for the others
+export function gestHTML(role, list, o = {}) {
+  const mute = role === 'mute';
+  const label = mute ? t('sentLabel') : t('gotLabel');
   const chips = list.length
-    ? list.slice(-12).map((g, i, a) => gestureChip(g.g, i === a.length - 1)).join('')
+    ? list.slice(-12).map((g, i, a) => gestureChip(g.g, i === a.length - 1, mute ? g.k : null)).join('')
     : `<span class="empty" style="flex:1">${t('noGestures')}</span>`;
-  return `<div class="muted" style="margin-bottom:4px">${label}</div><div class="gstrip">${chips}</div>`;
+  const tools = mute && list.length ? `<span class="gtools"><button class="btn small ghost" data-act="gundo">${icon('eraser', { size: 16 })}<span>${t('gUndo')}</span></button><button class="btn small ghost" data-act="gclear">${icon('trash', { size: 16 })}<span>${t('gClear')}</span></button></span>` : '';
+  const flag = o.flagged ? `<span class="gflag" role="status">${icon('eraser', { size: 14 })}${t('gChanged')}</span>` : '';
+  return `<div class="ghead"><span class="muted">${label}</span>${flag}${tools}</div><div class="gstrip${o.flagged ? ' flagged' : ''}" ${o.flagged ? 'data-act="gseen"' : ''}>${chips}</div>`;
 }
 
 export function logHTML(list, players) {
@@ -201,6 +214,7 @@ export function logHTML(list, players) {
 }
 export const deafHTML = () => `<div class="log"><div class="deafbox">${t('cantHear')}</div></div>`;
 export const muteHTML = () => `<div class="deafbox">${t('muteNote')}</div>`;
+export const speakHTML = () => `<div class="deafbox speakhint">${icon('mic', { size: 18 })}<span>${t('speakHint')}</span></div>`;
 export const sayHTML = () => `<div class="say"><input id="say" class="input" maxlength="140" autocomplete="off" placeholder="${t('sayPh')}"><button class="btn primary" data-act="say">${t('send')}</button></div>`;
 
 // ---------------------------------------------------------------- overlays
@@ -217,16 +231,18 @@ export function overHTML(o) {
   if (g.status === 'playing') return '';
   const won = g.status === 'won';
   const left = remainingMs(g, g.endedAt);
+  const max = g.maxStrikes || MAX_STRIKES;
+  const last = won && o.level >= LEVEL_COUNT;
   const next = o.isHost
-    ? `<button class="btn primary" data-act="next">${won ? t('nextLevel') : t('retry')}</button>
-       ${o.canRoom ? `<button class="btn" data-act="toroom">${t('backToRoom')}</button>` : ''}`
+    ? `${last ? '' : `<button class="btn primary" data-act="next">${won ? t('nextLevel') : t('retry')}</button>`}
+       <button class="btn${last ? ' primary' : ''}" data-act="toroom">${t(o.local ? 'backToLevels' : 'backToRoom')}</button>`
     : `<p class="muted">${t('waitNext')}</p>`;
   return `<div class="overlay"><div class="sheet ${won ? 'win' : 'lose'}">
-    <h2>${won ? t('won') : t('lost')}</h2>
-    ${won ? '' : `<p class="muted">${t('reason_' + (g.reason || 'time'))}</p>`}
+    <h2>${last ? t('wonAll') : won ? t('won') : t('lost')}</h2>
+    ${won ? (last ? `<p class="muted">${t('wonAllDesc')}</p>` : `<p class="unlock">${icon('check', { size: 18 })}${t('levelOpen', { n: o.level + 1 })}</p>`) : `<p class="muted">${t('reason_' + (g.reason || 'time'), { n: max })}</p>`}
     <div class="stats">
       <div><span class="muted">${t('timeLeft')}</span><b>${won ? fmt(left) : '0:00'}</b></div>
-      <div><span class="muted">${t('strikesUsed')}</span><b>${g.strikes}/${MAX_STRIKES}</b></div>
+      <div><span class="muted">${t('strikesUsed')}</span><b>${g.strikes}/${max}</b></div>
       <div><span class="muted">${t('level', { n: '' }).trim()}</span><b>${o.level}</b></div>
     </div>${next}
     <button class="btn ghost" data-act="leave">${t('toHome')}</button></div></div>`;

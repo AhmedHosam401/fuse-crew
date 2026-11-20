@@ -1,6 +1,6 @@
 // ui.js — drawing helpers: avatars, bomb + manual renderers, gestures, sounds.
-import { COLOR_HEX, SYMBOLS, CODE_COLORS } from './engine.js';
-import { t, colorName, opText } from './i18n.js';
+import { COLOR_HEX, SYMBOLS } from './engine.js';
+import { t, colorName } from './i18n.js';
 
 // Role colors live in CSS variables so they can be tuned separately for the light and the dark theme.
 export const ROLE_COLOR = { mute: 'var(--c-mute)', blind: 'var(--c-blind)', deaf: 'var(--c-deaf)', none: 'var(--c-none)' };
@@ -24,6 +24,10 @@ const ICONS = {
   link: '<path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  book: '<path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19.5A2 2 0 0 1 6 18h13"/><path d="M9 7h6"/>',
+  eraser: '<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
+  trash: '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+  lock2: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
 };
 // `off` draws a diagonal slash over the icon (a muted mic, silenced headphones, ...)
 export function icon(name, { size = 22, off = false } = {}) {
@@ -75,46 +79,18 @@ export function avatar(role, size = 56) {
   return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true"><circle cx="50" cy="54" r="34" style="fill:${c}"/><ellipse cx="38" cy="38" rx="9" ry="5" fill="#fff" opacity=".28" transform="rotate(-30 38 38)"/>${eyes}${mouth}${blind}${muffs}${fuse}</svg>`;
 }
 
-// ---------- deaf: the bomb ----------
-export function bombHTML(mod) {
-  if (mod.type === 'wires') {
-    return `<div class="wires">${mod.data.wires.map((c, i) =>
-      `<div class="wire ${c}" style="background:${COLOR_HEX[c]}"><span class="n">${i + 1}</span></div>`).join('')}</div>`;
-  }
-  if (mod.type === 'symbols') {
-    return `<div class="syms">${mod.data.symbols.map((s, i) =>
-      `<div class="symcard">${s}<small>${i + 1}</small></div>`).join('')}</div>`;
-  }
-  return `<div class="codecards">${mod.data.digits.map((d, i) => {
-    const c = mod.data.colors[i];
-    return `<div class="codecard" style="background:${COLOR_HEX[c]};color:${c === 'yellow' ? '#1a1400' : '#fff'}">${d}</div>`;
-  }).join('')}</div>`;
-}
-
-// ---------- mute: the manual ----------
-const sw = (c) => `<b><i class="sw" style="background:${COLOR_HEX[c]}"></i>${colorName(c)}</b>`;
-
-export function manualHTML(manual, page) {
-  if (page === 'wires') {
-    return `<div class="mpage"><h3>${t('manualWires')}</h3>${[3, 4, 5].map((k) =>
-      `<div class="rulebox"><b>${t('wiresCount', { n: k })}</b><br>${t('ruleWires', { a: sw(manual.wires[k].a), b: sw(manual.wires[k].b) })}</div>`).join('')}</div>`;
-  }
-  if (page === 'symbols') {
-    return `<div class="mpage"><h3>${t('manualSymbols')}</h3><div class="rulebox">${t('ruleSymbols')}</div>
-      <div class="rank">${manual.symbols.map((s, i) => `<span>${s}<small>${i + 1}</small></span>`).join('')}</div></div>`;
-  }
-  return `<div class="mpage"><h3>${t('manualCode')}</h3><div class="rulebox">${t('ruleCode')}</div>
-    <div class="optable">${CODE_COLORS.map((c) => `<div>${sw(c)}<span>${opText(manual.code[c])}</span></div>`).join('')}</div></div>`;
-}
-
 // ---------- gestures ----------
 export const SIGNALS = { yes: '✅', no: '❌', ask: '❓', stop: '✋', again: '🔁' };
-export function gestureChip(g, isNew) {
+export function gestureChip(g, isNew, key) {
   const [k, v] = g.split(':');
-  const cls = `gchip${isNew ? ' new' : ''}`;
-  if (k === 'c') return `<span class="${cls}" style="background:${COLOR_HEX[v]};color:${v === 'white' || v === 'yellow' ? '#111' : '#fff'}" title="${colorName(v)}"></span>`;
-  if (k === 'x') return `<span class="${cls}">${SIGNALS[v] || '?'}</span>`;
-  return `<span class="${cls}">${esc(v)}</span>`;
+  const cls = `gchip${isNew ? ' new' : ''}${key ? ' del' : ''}`;
+  let style = ''; let inner = '';
+  if (k === 'c') { style = ` style="background:${COLOR_HEX[v]};color:${v === 'white' || v === 'yellow' ? '#111' : '#fff'}" title="${colorName(v)}"`; }
+  else if (k === 'x') inner = SIGNALS[v] || '?';
+  else inner = esc(v);
+  // the Mute's own chips are buttons: a tap removes that signal (the others see a "signals changed" notice)
+  if (key) return `<button class="${cls}"${style} data-act="gdel" data-k="${esc(key)}" aria-label="${t('gDelOne')}">${inner}<i class="gx" aria-hidden="true">×</i></button>`;
+  return `<span class="${cls}"${style}>${inner}</span>`;
 }
 
 export function paletteHTML(tab) {
