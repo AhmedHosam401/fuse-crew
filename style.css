@@ -512,3 +512,35 @@ body.mute .pbtn { height: 42px; min-height: 42px; font-size: 22px; border-radius
 .pgrid.g-colors { grid-template-columns: repeat(6, 1fr); }
 .pgrid.g-symbols { grid-template-columns: repeat(4, 1fr); }
 body.mute .pgrid.g-colors .pbtn { height: 48px; min-height: 48px; }
+
+/* ---------- accounts, friends, invitations ---------- */
+.err.good { color: var(--good); }
+.acct { display: flex; align-items: center; gap: 10px; }
+.acct.big { justify-content: center; }
+.acct .ainfo { flex: 1; display: flex; flex-direction: column; text-align: start; min-width: 0; }
+.acct.big .ainfo { flex: none; align-items: flex-start; }
+.acct .ainfo b { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct .ainfo small { color: var(--text2); font-size: 13px; }
+.av { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; font-size: 20px;
+  background: linear-gradient(145deg, var(--accent), var(--accent2)); color: var(--on-accent); }
+.av.sm { width: 36px; height: 36px; font-size: 16px; }
+.iconbtn.lg { position: relative; width: 46px; height: 46px; border-radius: 14px; }
+.nbadge { position: absolute; top: -5px; inset-inline-end: -5px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 99px; background: var(--bad); color: #fff;
+  font-size: 12px; font-weight: 900; font-style: normal; display: grid; place-items: center; }
+.muted.small, p.small { font-size: 13px; }
+.sheet form, form.sheet { text-align: start; }
+.sheet.auth h2, .sheet.friendsheet h2 { text-align: center; }
+.sheet.auth .input { font-size: 17px; }
+.fsec { display: flex; flex-direction: column; gap: 8px; text-align: start; }
+.fsec .sect { margin: 0; }
+.frow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 14px; background: var(--surface2); }
+.frow .fnm { flex: 1; min-width: 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
+.frow .btn.small { min-height: 36px; padding: 0 12px; }
+.biocard { text-align: start; display: flex; flex-direction: column; gap: 8px; }
+.biocard .sect { display: flex; align-items: center; gap: 6px; margin: 0; }
+.notice { position: fixed; z-index: 45; top: max(10px, env(safe-area-inset-top)); inset-inline: 12px; margin: auto; max-width: 480px; display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-radius: 18px; background: var(--surface); border: 2px solid var(--accent); box-shadow: 0 16px 40px -12px rgba(0, 0, 0, .6); animation: rise .25s; }
+.notice .ntx { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; text-align: start; }
+.lockscreen { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+.lockico { width: 128px; height: 128px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--accent-text); box-shadow: var(--shadow); }
+.lockscreen .btn { width: min(320px, 100%); }

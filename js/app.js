@@ -6,6 +6,8 @@ import { sound, toggleSfx, $, paletteHTML, theme, fmt } from './ui.js';
 import * as V from './screens.js';
 import { lampLit, morseState, bookChapters } from './senses.js';
 import { createVoice, voiceSupported } from './voice.js';
+import * as Acc from './account.js';
+import * as Soc from './social.js';
 
 const app = document.getElementById('app');
 const modal = document.getElementById('modal');
@@ -31,6 +33,11 @@ const S = {
   installEvt: null, wakeLock: null,
   voice: null, vs: { supported: voiceSupported(), joined: false }, voiceAuto: false,
   dlg: null,
+  // accounts / friends: S.profile is set only while signed in to an account (otherwise this is a guest)
+  acct: null, profile: null, friends: [], reqs: [], invites: [], accUnsubs: [], reqsReady: false,
+  sheet: null, authTab: 'in', authName: '', authErr: '', authBusy: false,
+  fname: '', fmsg: '', fok: false, fbusy: false, fdel: null, invited: {}, bioMsg: '',
+  notice: null, dismissed: new Set(), reqAlert: null, locked: false, lockErr: '',
 };
 
 // ---------------------------------------------------------------- small utils
@@ -48,9 +55,18 @@ const gameFrom = (g) => ({
 const listOf = (obj) => Object.values(obj || {}).sort((a, b) => a.t - b.t);
 const keyedList = (obj) => Object.entries(obj || {}).map(([k, v]) => ({ ...v, k })).sort((a, b) => a.t - b.t);
 
-// levels: the highest unlocked level is remembered on this device and travels with the room (the host writes it there)
-const progress = () => Math.min(E.LEVEL_COUNT, Math.max(1, parseInt(store.get('fuse-progress'), 10) || 1));
-const saveProgress = (n) => { if (n > progress()) store.set('fuse-progress', String(Math.min(E.LEVEL_COUNT, n))); };
+// levels: the highest unlocked level. A signed-in account keeps it in the cloud (so it follows the player to any phone and
+// survives game updates); a guest keeps it on this device. It travels with the room (the host writes it there).
+const deviceProgress = () => Math.min(E.LEVEL_COUNT, Math.max(1, parseInt(store.get('fuse-progress'), 10) || 1));
+const progress = () => (S.profile ? Math.min(E.LEVEL_COUNT, Math.max(1, S.profile.progress || 1)) : deviceProgress());
+function saveProgress(n) {
+  n = Math.min(E.LEVEL_COUNT, n);
+  if (n <= progress()) return;
+  if (S.profile) {
+    Soc.saveProgress(S.net, S.uid, n, progress()).catch((e) => console.error(e));
+    S.profile = { ...S.profile, progress: n };
+  } else store.set('fuse-progress', String(n));
+}
 const unlockedOf = (room) => Math.min(E.LEVEL_COUNT, Math.max(1, (room && room.unlocked) || 1));
 const levelOf = (room) => Math.min(unlockedOf(room), Math.max(1, (room && room.level) || unlockedOf(room)));
 
@@ -139,12 +155,19 @@ function applySense() {
 
 function render() {
   applySense();
+  renderNotice();
+  if (S.screen === 'lock') return renderLock();
   if (S.screen === 'boot') return renderBoot();
   if (S.screen === 'home') return renderHome();
   if (S.screen === 'lobby') return renderLobby();
   return renderPlay();
 }
 
+function renderLock() {
+  S.skel = 'lock';
+  const rec = bioRec();
+  app.innerHTML = V.lockHTML({ name: (rec && rec.name) || '', err: S.lockErr });
+}
 function renderBoot() {
   S.skel = 'boot';
   app.innerHTML = V.bootHTML();
@@ -152,14 +175,14 @@ function renderBoot() {
 function renderHome() {
   S.skel = 'home';
   app.innerHTML = V.homeHTML({
-    name: S.name, code: S.codeIn, err: S.err, mode: isFirebaseConfigured() ? 'firebase' : 'demo',
+    name: S.name, code: S.codeIn, err: S.err, mode: isFirebaseConfigured() ? 'firebase' : 'demo', account: accountView(),
     canInstall: !!S.installEvt && !isStandalone(), ios: isIOS() && !isStandalone(),
   });
 }
 function renderLobby() {
   S.skel = 'lobby';
   if (S.voice) S.voice.setRules({ speak: true, hear: true });     // between rounds everybody can talk and hear
-  app.innerHTML = V.lobbyHTML(S.room, S.code, S.uid, S.local, S.vs);
+  app.innerHTML = V.lobbyHTML(S.room, S.code, S.uid, S.local, S.vs, !!S.profile && !S.local);
 }
 
 function region(id, html, key) {
@@ -311,8 +334,8 @@ function initNav() {
 }
 function onBack() {
   if (S.dlg) return closeDialog(false);
-  if (modal.innerHTML.trim()) { modal.innerHTML = ''; return undefined; }    // the "how to play" sheet
-  if (S.screen === 'boot') return undefined;
+  if (modal.innerHTML.trim()) { closeSheet(); return undefined; }    // the "how to play" sheet, sign in, friends
+  if (S.screen === 'boot' || S.screen === 'lock') return undefined;
   if (S.screen === 'home') return askExitApp();
   return askLeave();
 }
@@ -330,19 +353,22 @@ function exitApp() {
 }
 
 // ---------------------------------------------------------------- connection / rooms
-async function connect() {
+async function connect(quiet) {
   if (S.net && !S.local) return;
-  S.err = t('connecting'); setErr(S.err);
+  if (!quiet) { S.err = t('connecting'); setErr(S.err); }
   try {
     S.net = await createNet(); S.uid = S.net.uid; S.local = false;
   } catch (e) {
     console.error(e); S.net = null; throw new Error('errNet');
   }
+  await syncAccount();                  // a saved sign-in comes back by itself
+  if (!quiet) setErr('');
 }
 function setErr(msg) { S.err = msg || ''; const el = document.getElementById('err'); if (el) el.textContent = S.err; }
 const fail = (key) => { setErr(t(key)); };
 
 function readName() {
+  if (S.profile) return S.profile.name;                    // an account's name is fixed
   const n = ($('#name') ? $('#name').value : S.name).trim().slice(0, 14);
   S.name = n; store.set('fuse-name', n);
   if (!n) { fail('errName'); return null; }
@@ -385,7 +411,7 @@ function onRoom(raw) {
 
 // level progress: every device remembers the highest unlocked level; an old room without one gets it from its host
 function syncLevels(room) {
-  if (S.local) return;                                       // practice: all levels open, progress untouched
+  if (S.local || S.profile) return;                          // practice: all open; an account keeps its own progress                                       // practice: all levels open, progress untouched
   if (room.unlocked) saveProgress(room.unlocked);
   else if (room.host === S.uid) S.net.set(`rooms/${S.code}/unlocked`, progress());
 }
@@ -432,9 +458,9 @@ async function createRoom() {
   } catch (e) { fail('errNet'); }
 }
 
-async function joinRoom() {
+async function joinRoom(forced) {
   const name = readName(); if (!name) return;
-  const code = ($('#code').value || '').trim().toUpperCase();
+  const code = (forced || ($('#code') && $('#code').value) || '').trim().toUpperCase();
   S.codeIn = code;
   if (!/^[A-Z]{4}$/.test(code)) return fail('errCode');
   try {
@@ -452,7 +478,7 @@ async function joinRoom() {
 }
 
 async function startLocal() {
-  const name = ($('#name') && $('#name').value.trim().slice(0, 14)) || S.name || (getLang() === 'ar' ? 'أنا' : 'Me');
+  const name = (S.profile && S.profile.name) || ($('#name') && $('#name').value.trim().slice(0, 14)) || S.name || (getLang() === 'ar' ? 'أنا' : 'Me');
   S.net = createLocalNet({ restore: false }); S.uid = S.net.uid; S.local = true;
   // practice is free: every level is open, in any order, and nothing here touches the saved progress
   await S.net.set('rooms/SOLO', { host: S.uid, phase: 'lobby', roundNo: 0, createdAt: Date.now(), unlocked: E.LEVEL_COUNT, level: 1, players: { [S.uid]: { name, joinedAt: Date.now(), online: true } } });
@@ -585,6 +611,211 @@ function sendSay() {
   if (S.role === 'deaf') toast(t('sent'));
 }
 
+// ---------------------------------------------------------------- accounts, friends, invitations
+// A guest plays with just a name. An account (name + code) keeps the progress in the cloud, has friends, and can be locked
+// with the phone's fingerprint. S.profile is non-null only while an account is signed in.
+const bioRec = () => { try { return JSON.parse(store.get('fuse-bio')); } catch (e) { return null; } };
+const accountView = () => (S.profile ? { name: S.profile.name, level: progress(), badge: S.reqs.length + S.invites.filter((i) => !S.dismissed.has(i.id)).length } : null);
+const me = () => ({ uid: S.uid, name: S.profile.name });
+
+function stopWatch() { S.accUnsubs.forEach((u) => { try { u(); } catch (e) { /* ignore */ } }); S.accUnsubs = []; S.reqsReady = false; }
+function dropAccount() {
+  stopWatch();
+  Object.assign(S, { acct: null, profile: null, friends: [], reqs: [], invites: [], notice: null, reqAlert: null });
+  store.set('fuse-acct', null);
+}
+// bring the signed-in account (if the net has one) into the app: its profile, and live friends / requests / invitations
+async function syncAccount(typed, startProgress) {
+  const a = S.net && !S.local ? S.net.account() : null;
+  if (!a) { if (S.acct || S.profile) dropAccount(); return; }
+  S.uid = S.net.uid;
+  if (S.acct && S.acct.uid === a.uid && S.profile) return;
+  try {
+    const p = await Soc.ensureProfile(S.net, a, typed || Acc.nameFromKey(a.key), startProgress);
+    S.acct = a; S.profile = p; S.name = p.name;
+    store.set('fuse-acct', JSON.stringify({ uid: a.uid, name: p.name }));
+    startWatch();
+  } catch (e) { console.error(e); S.acct = null; S.profile = null; throw new Error('errNet'); }
+}
+function startWatch() {
+  stopWatch();
+  const net = S.net; const uid = S.uid;
+  S.accUnsubs = [
+    Soc.watchProfile(net, uid, (p) => { if (p && S.profile && S.uid === uid) { S.profile = { ...S.profile, ...p, progress: Math.max(p.progress || 1, S.profile.progress || 1) }; refreshAccount(); } }),
+    Soc.watchFriends(net, uid, (l) => { S.friends = l; refreshSheet(); }),
+    Soc.watchRequests(net, uid, (l) => {
+      const had = new Set(S.reqs.map((r) => r.id));
+      const fresh = l.filter((r) => !had.has(r.id));
+      S.reqs = l;
+      if (S.reqsReady && fresh.length) { S.reqAlert = fresh[fresh.length - 1].name; ping(); }
+      S.reqsReady = true; refreshAccount(); refreshSheet(); updateNotice();
+    }),
+    Soc.watchInvites(net, uid, (l) => { S.invites = l; refreshAccount(); updateNotice(); }),
+  ];
+}
+function ping() { sound.ok(); buzz([60, 40, 60]); }
+
+// the banner at the top: the newest invitation, else a new friend request
+function updateNotice() {
+  const inv = S.invites.find((i) => !S.dismissed.has(i.id));
+  if (inv) {
+    if (!S.notice || S.notice.id !== inv.id) { S.notice = { kind: 'invite', id: inv.id, name: inv.name, room: inv.room }; if (S.screen !== 'play') ping(); }
+  } else if (S.reqAlert) S.notice = { kind: 'req', name: S.reqAlert };
+  else S.notice = null;
+  renderNotice();
+}
+function renderNotice() {
+  let el = document.getElementById('notice');
+  const show = S.notice && S.profile && !S.local && !['play', 'lock', 'boot'].includes(S.screen);
+  if (!show) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'notice'; document.body.appendChild(el); }
+  const html = V.noticeHTML(S.notice);
+  if (el.dataset.k !== html) { el.dataset.k = html; el.innerHTML = html; }
+}
+// update only the account card on the home screen (a full render would drop what is being typed)
+function refreshAccount() {
+  if (S.screen !== 'home') return;
+  const el = document.querySelector('.home .acct');
+  const v = accountView();
+  if (el && v) el.outerHTML = V.accountCardHTML(v); else if (!!el !== !!v) render();
+}
+
+// ---- the sheets (sign in, account, friends) live in #modal
+const keepInputs = () => {
+  const ids = ['a-name', 'a-code', 'f-name']; const out = {}; const act = document.activeElement;
+  for (const id of ids) { const el = document.getElementById(id); if (el) out[id] = { v: el.value, f: el === act, s: el.selectionStart }; }
+  return out;
+};
+const restoreInputs = (k) => {
+  for (const [id, o] of Object.entries(k)) {
+    const el = document.getElementById(id); if (!el) continue;
+    el.value = o.v;
+    if (o.f) { el.focus(); try { el.setSelectionRange(o.s, o.s); } catch (e) { /* password inputs */ } }
+  }
+};
+function sheetHTML() {
+  if (S.sheet === 'auth') return V.authSheetHTML({ tab: S.authTab, name: S.authName, err: S.authErr, busy: S.authBusy });
+  if (S.sheet === 'account') return V.accountSheetHTML({ name: S.profile.name, level: progress(), badge: S.reqs.length, bioAvail: S.bioAvail, bioOn: !!bioRec() && bioRec().uid === S.uid, bioMsg: S.bioMsg });
+  if (S.sheet === 'friends') return V.friendsSheetHTML({ friends: S.friends, reqs: S.reqs, room: S.screen === 'lobby' && !S.local ? S.code : null, invited: S.invited, fname: S.fname, msg: S.fmsg, ok: S.fok, busy: S.fbusy, confirmDel: S.fdel });
+  return '';
+}
+function renderSheet() {
+  if (!S.sheet) return;
+  if (S.sheet !== 'auth' && !S.profile) { S.sheet = null; modal.innerHTML = ''; return; }
+  const k = keepInputs();
+  modal.innerHTML = sheetHTML();
+  restoreInputs(k);
+}
+function openSheet(kind) {
+  if (S.dlg || S.local) return;
+  if (kind !== 'auth' && !S.profile) return;
+  if (kind === 'auth') { S.authErr = ''; S.authBusy = false; }
+  if (kind === 'friends') { S.reqAlert = null; S.fmsg = ''; S.fdel = null; updateNotice(); }
+  if (kind === 'account') { S.bioMsg = ''; Acc.bioAvailable().then((v) => { S.bioAvail = v; if (S.sheet === 'account') renderSheet(); }); }
+  S.sheet = kind; renderSheet();
+}
+function closeSheet() { S.sheet = null; modal.innerHTML = ''; }
+function refreshSheet() { if (S.sheet === 'friends' || S.sheet === 'account') renderSheet(); }
+
+async function submitAuth() {
+  if (S.authBusy) return;
+  const rawName = ($('#a-name') || {}).value || ''; const code = ($('#a-code') || {}).value || '';
+  const name = Acc.cleanName(rawName); S.authName = rawName;
+  const up = S.authTab === 'up';
+  const fail = (key) => { S.authErr = t(key); renderSheet(); };
+  if (!Acc.validName(name)) return fail('errNameBad');
+  if (up && !Acc.validCode(code)) return fail('errWeakCode');
+  if (!code) return fail('errLogin');
+  S.authBusy = true; S.authErr = ''; renderSheet();
+  try {
+    await connect(true);
+    const guestLevel = deviceProgress();
+    S.acct = null; S.profile = null;
+    if (up) await S.net.signUp(name, code); else await S.net.signIn(name, code);
+    try { await syncAccount(name, up ? guestLevel : 1); }
+    catch (e) { try { await S.net.signOut(); } catch (e2) { /* ignore */ } S.uid = S.net.uid; throw e; }
+    S.authBusy = false; S.authName = ''; closeSheet(); render(); toast(t('acctLevel', { n: progress() }));
+    if (up) openSheet('account');                     // right after creating it: offer the fingerprint lock
+  } catch (e) {
+    S.authBusy = false; S.authErr = t(e && e.key ? e.key : e && /^err/.test(e.message) ? e.message : 'errNet'); renderSheet();
+  }
+}
+async function signOutAccount() {
+  closeSheet();
+  if (!(await openDialog({ title: t('dlgSignOutTitle'), body: t('dlgSignOutBody'), ok: t('dlgSignOutOk'), cancel: t('dlgStay') }))) return;
+  try { await connect(true); await S.net.signOut(); } catch (e) { console.error(e); }
+  if (S.net) S.uid = S.net.uid;
+  dropAccount(); store.set('fuse-bio', null); S.name = store.get('fuse-name') || '';
+  render();
+}
+
+async function addFriend() {
+  const raw = ($('#f-name') || {}).value || ''; S.fname = raw;
+  if (!Acc.cleanName(raw) || S.fbusy) return;
+  S.fbusy = true; S.fmsg = ''; renderSheet();
+  try {
+    await connect(true);
+    const target = await Soc.findUser(S.net, raw);
+    if (!target) { S.fmsg = t('friendNotFound'); S.fok = false; }
+    else {
+      const r = await Soc.sendRequest(S.net, me(), target);
+      S.fmsg = t({ self: 'friendSelf', already: 'friendAlready', accepted: 'friendAccepted', sent: 'friendSent' }[r]);
+      S.fok = r === 'accepted' || r === 'sent';
+      if (S.fok) S.fname = '';
+    }
+  } catch (e) { console.error(e); S.fmsg = t('errNet'); S.fok = false; }
+  S.fbusy = false; renderSheet();
+}
+async function friendOp(fn) {
+  try { await connect(true); await fn(); } catch (e) { console.error(e); S.fmsg = t('errNet'); S.fok = false; }
+  renderSheet();
+}
+const acceptFriend = (id) => friendOp(async () => { await Soc.acceptRequest(S.net, me(), id); S.fmsg = t('friendAccepted'); S.fok = true; });
+const declineFriend = (id) => friendOp(() => Soc.declineRequest(S.net, me(), id));
+function removeFriend(id) {
+  if (S.fdel !== id) { S.fdel = id; renderSheet(); return undefined; }      // first tap asks "sure?", second removes
+  S.fdel = null;
+  return friendOp(() => Soc.removeFriend(S.net, me(), id));
+}
+function inviteFriend(id) {
+  if (S.local || !S.code) return undefined;
+  return friendOp(async () => { await Soc.sendInvite(S.net, me(), id, S.code); S.invited = { ...S.invited, [id]: true }; });
+}
+async function answerInvite(id, join) {
+  const inv = S.invites.find((i) => i.id === id);
+  S.dismissed.add(id); S.notice = null; updateNotice();
+  try { await Soc.dismissInvite(S.net, S.uid, id); } catch (e) { /* ignore */ }
+  if (!join || !inv || S.screen === 'play' || S.local) return;
+  if (S.screen === 'lobby') {
+    if (S.code === inv.room) return;
+    if (!(await openDialog({ title: t('dlgLeaveTitle'), body: t('dlgLeaveLobby', { code: S.code }), ok: t('dlgLeaveOk'), cancel: t('dlgStay') }))) return;
+    await leaveRoom();
+  }
+  closeSheet();
+  await joinRoom(inv.room);
+}
+
+// ---- fingerprint lock
+async function enableBio() {
+  S.bioMsg = '';
+  const id = await Acc.bioEnroll(S.uid, S.profile.name);
+  if (id) { store.set('fuse-bio', JSON.stringify({ uid: S.uid, id, name: S.profile.name })); S.bioMsg = t('bioOk'); } else S.bioMsg = t('bioFail');
+  renderSheet();
+}
+function disableBio() { store.set('fuse-bio', null); S.bioMsg = ''; renderSheet(); }
+async function tryUnlock(manual) {
+  const rec = bioRec(); if (!rec) { S.locked = false; return continueBoot(); }
+  const ok = await Acc.bioVerify(rec.id);
+  if (ok) { S.locked = false; S.lockErr = ''; return continueBoot(); }
+  if (manual) { S.lockErr = t('lockFail'); render(); }
+  return undefined;
+}
+async function lockUseCode() {                          // forget the saved sign-in: the name and code are needed again
+  try { await connect(true); await S.net.signOut(); } catch (e) { S.lockErr = t('errNet'); render(); return; }
+  S.uid = S.net.uid; dropAccount(); store.set('fuse-bio', null); S.locked = false; S.lockErr = '';
+  continueBoot();
+}
+
 // ---------------------------------------------------------------- events
 document.addEventListener('click', (e) => {
   // keyboard (Enter / Space) on the Blind's controls; real touches are handled by the pointer code below
@@ -602,7 +833,7 @@ document.addEventListener('click', (e) => {
     case 'join': joinRoom(); break;
     case 'local': startLocal(); break;
     case 'how': modal.innerHTML = V.howHTML(); break;
-    case 'closemodal': modal.innerHTML = ''; break;
+    case 'closemodal': closeSheet(); break;
     case 'dlg-ok': closeDialog(true); break;
     case 'dlg-cancel': closeDialog(false); break;
     case 'skipboot': skipBoot(); break;
@@ -637,19 +868,39 @@ document.addEventListener('click', (e) => {
     case 'ptab': S.ptab = d.v; saveUi(); render(); break;
     case 'gest': sendGesture(d.g); break;
     case 'say': sendSay(); break;
+    case 'auth': openSheet('auth'); break;
+    case 'authtab': { const k = keepInputs(); S.authName = (k['a-name'] || {}).v || S.authName; S.authTab = d.v; S.authErr = ''; renderSheet(); break; }
+    case 'account': openSheet('account'); break;
+    case 'friends': openSheet('friends'); break;
+    case 'fadd': addFriend(); break;
+    case 'freqok': acceptFriend(d.id); break;
+    case 'freqno': declineFriend(d.id); break;
+    case 'fdel': removeFriend(d.id); break;
+    case 'finvite': inviteFriend(d.id); break;
+    case 'invjoin': answerInvite(d.id, true); break;
+    case 'invno': answerInvite(d.id, false); break;
+    case 'noticeoff': S.reqAlert = null; updateNotice(); break;
+    case 'signout': signOutAccount(); break;
+    case 'bioon': enableBio(); break;
+    case 'biooff': disableBio(); break;
+    case 'unlock': tryUnlock(true); break;
+    case 'lockcode': lockUseCode(); break;
     default: break;
   }
 });
+document.addEventListener('submit', (e) => { if (e.target.dataset && e.target.dataset.form === 'auth') { e.preventDefault(); submitAuth(); } });
 document.addEventListener('input', (e) => {
   if (e.target.id === 'name') S.name = e.target.value;
+  if (e.target.id === 'a-name') S.authName = e.target.value;
   if (e.target.id === 'code') { e.target.value = e.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase(); S.codeIn = e.target.value; }
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { if (S.dlg) closeDialog(false); else if (modal.innerHTML.trim()) modal.innerHTML = ''; return; }
+  if (e.key === 'Escape') { if (S.dlg) closeDialog(false); else if (modal.innerHTML.trim()) closeSheet(); return; }
   if (e.key !== 'Enter') return;
   if (e.target.id === 'say') sendSay();
   else if (e.target.id === 'code') joinRoom();
   else if (e.target.id === 'name') createRoom();
+  else if (e.target.id === 'f-name') addFriend();
 });
 // after a reload the browser may refuse to start remote audio until the page is touched: the first touch does it
 document.addEventListener('pointerdown', () => { if (S.voice && S.vs.blocked) S.voice.resumeAudio(); }, true);
@@ -775,6 +1026,14 @@ async function boot() {
   theme.init();
   initNav();
   loadUi();
+  if (bioRec()) {                                      // fingerprint lock: nothing opens before the phone says yes
+    S.locked = true; S.screen = 'lock'; render();
+    tryUnlock(false);                                  // ask at once; if the browser wants a tap first, the button is there
+    return;
+  }
+  await continueBoot();
+}
+async function continueBoot() {
   if (hasLocalSave()) {                                // one-phone practice survives a refresh
     S.net = createLocalNet({ restore: true }); S.uid = S.net.uid; S.local = true;
     S.screen = 'boot'; render();
@@ -783,9 +1042,13 @@ async function boot() {
   }
   const saved = session.get('fuse-room') || store.get('fuse-room');
   if (saved) { await restoreOnline(saved); return; }
-  render();
+  S.screen = 'home'; render();
+  if (store.get('fuse-acct')) {                        // a saved account: bring it back in the background
+    try { await connect(true); } catch (e) { return; }
+    if (S.screen === 'home') render();
+  }
 }
-if (location.search.includes('debug')) window.__fuse = { S, E, cur, voice: () => S.voice, onBack, nav };
+if (location.search.includes('debug')) window.__fuse = { S, E, cur, voice: () => S.voice, onBack, nav, Soc, Acc };
 boot();
 
 if ('serviceWorker' in navigator) {

@@ -27,6 +27,12 @@ const ICONS = {
   book: '<path d="M4 19.5V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19.5A2 2 0 0 1 6 18h13"/><path d="M9 7h6"/>',
   eraser: '<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+  users: '<circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/><path d="M16 4.2a4 4 0 0 1 0 7.6"/><path d="M22 21v-1a6 6 0 0 0-4-5.6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+  finger: '<path d="M12 11a2 2 0 0 0-2 2c0 3 .5 5.5 1.5 8"/><path d="M16 13c0 3-.5 5-1.5 7.5"/><path d="M8 14.5c0 1.2-.1 2.4-.4 3.5"/><path d="M5.5 9a7 7 0 0 1 13 3c0 1.3-.1 2.7-.4 4"/><path d="M3 13c0-1.5.2-3 .8-4.4"/><path d="M8 5.2A7 7 0 0 1 12 4"/>',
   lock2: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
 };
 // `off` draws a diagonal slash over the icon (a muted mic, silenced headphones, ...)

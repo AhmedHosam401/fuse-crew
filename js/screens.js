@@ -46,7 +46,8 @@ export function homeHTML(h) {
       <p class="muted tagline">${t('tagline')}</p>
     </div>
     <div class="card form">
-      <input id="name" class="input" maxlength="14" autocomplete="nickname" placeholder="${t('namePh')}" value="${esc(h.name)}" aria-label="${t('yourName')}">
+      ${h.account ? accountCardHTML(h.account) : `<input id="name" class="input" maxlength="14" autocomplete="nickname" placeholder="${t('namePh')}" value="${esc(h.name)}" aria-label="${t('yourName')}">
+      <button class="btn small ghost" data-act="auth">${icon('user', { size: 18 })}<span>${t('acctOpen')}</span></button>`}
       <button class="btn primary" data-act="create">${t('createRoom')}</button>
       <div class="or"><span>${t('joinRoom')}</span></div>
       <div class="row">
@@ -98,7 +99,7 @@ export function levelsHTML(room, isHost, practice) {
     ${isHost ? '' : `<p class="muted">${t('hostPicksLevel')}</p>`}</div>`;
 }
 
-export function lobbyHTML(room, code, uid, soloLocal, voice) {
+export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite) {
   const ids = Object.keys(room.players || {}).sort((a, b) => room.players[a].joinedAt - room.players[b].joinedAt);
   const isHost = room.host === uid;
   const mode = room.roleMode === 'pick' ? 'pick' : 'random';
@@ -146,7 +147,8 @@ export function lobbyHTML(room, code, uid, soloLocal, voice) {
       <div class="roomcode">${esc(code)}</div>
       <div style="text-align:center;margin-top:8px"><button class="btn small ghost" data-act="copy">${icon('copy', { size: 18 })}<span>${t('shareRoom')}</span></button></div>
     </div>
-    <div><h3 class="sect">${t('players')} ${n}/3</h3><div class="slots">${slots}</div></div>`}
+    <div><h3 class="sect">${t('players')} ${n}/3</h3><div class="slots">${slots}</div></div>
+    ${canInvite && n < 3 ? `<button class="btn" data-act="friends">${icon('users', { size: 20 })}<span>${t('inviteFriend')}</span></button>` : ''}`}
     ${levelsHTML(room, isHost, soloLocal)}
     ${modeCard}
     ${picker}
@@ -305,4 +307,84 @@ export function voiceBarHTML(v, role, restricted) {
     ${btn('micmute', 'mic', t('micTitle'), mic)}${btn('earmute', 'headphones', t('earTitle'), ear)}
     ${v.total > 0 ? `<span class="vlinks" title="links">${icon('link', { size: 14 })}${v.connected}/${v.total}</span>` : ''}
     ${v.blocked ? `<button class="btn small" data-act="audioplay">${t('voiceTapPlay')}</button>` : ''}</div>`;
+}
+
+// ---------------------------------------------------------------- accounts, friends, invitations
+const initial = (name) => esc([...String(name || '?')][0] || '?');
+export function accountCardHTML(a) {
+  return `<div class="acct"><span class="av" aria-hidden="true">${initial(a.name)}</span>
+    <div class="ainfo"><b>${esc(a.name)}</b><small>${t('acctLevel', { n: a.level })}</small></div>
+    <button class="iconbtn lg" data-act="friends" aria-label="${t('friends')}" title="${t('friends')}">${icon('users', { size: 22 })}${a.badge ? `<i class="nbadge">${a.badge}</i>` : ''}</button>
+    <button class="iconbtn lg" data-act="account" aria-label="${t('acctTitle')}" title="${t('acctTitle')}">${icon('user', { size: 22 })}</button></div>`;
+}
+
+// sign in / create account
+export function authSheetHTML(o) {
+  const up = o.tab === 'up';
+  return `<div class="overlay" data-act="closemodal"><form class="sheet auth" data-stop="1" data-form="auth" novalidate>
+    <h2>${t(up ? 'acctSignUp' : 'acctSignIn')}</h2>
+    <div class="seg" role="tablist"><button type="button" class="segbtn${up ? '' : ' on'}" data-act="authtab" data-v="in">${t('acctSignIn')}</button><button type="button" class="segbtn${up ? ' on' : ''}" data-act="authtab" data-v="up">${t('acctSignUp')}</button></div>
+    <input id="a-name" class="input" maxlength="14" autocomplete="username" autocapitalize="off" placeholder="${t('acctName')}" value="${esc(o.name || '')}" aria-label="${t('acctName')}">
+    <input id="a-code" class="input" type="password" maxlength="32" autocomplete="${up ? 'new-password' : 'current-password'}" placeholder="${t(up ? 'acctCodeNew' : 'acctCode')}" aria-label="${t('acctCode')}">
+    ${up ? `<p class="muted small">${t('acctUpNote')}</p>` : ''}
+    <div class="err" id="a-err" role="alert">${esc(o.err || '')}</div>
+    <button type="submit" class="btn primary" data-act="authgo" ${o.busy ? 'disabled' : ''}>${o.busy ? t('connecting') : t(up ? 'acctSignUp' : 'acctSignIn')}</button>
+    <p class="muted small">${t('acctGuestNote')}</p>
+    <button type="button" class="btn ghost" data-act="closemodal">${t('close')}</button>
+  </form></div>`;
+}
+
+// the account sheet: who I am, the fingerprint lock, sign out
+export function accountSheetHTML(o) {
+  return `<div class="overlay" data-act="closemodal"><div class="sheet acctsheet" data-stop="1">
+    <div class="acct big"><span class="av" aria-hidden="true">${initial(o.name)}</span><div class="ainfo"><b>${esc(o.name)}</b><small>${t('acctLevel', { n: o.level })}</small></div></div>
+    <button class="btn" data-act="friends">${icon('users', { size: 20 })}<span>${t('friends')}${o.badge ? ` (${o.badge})` : ''}</span></button>
+    ${o.bioAvail ? `<div class="card biocard"><h3 class="sect">${icon('finger', { size: 20 })} ${t('bioTitle')}</h3><p class="muted small">${t('bioDesc')}</p>
+      <button class="btn${o.bioOn ? '' : ' primary'}" data-act="${o.bioOn ? 'biooff' : 'bioon'}">${t(o.bioOn ? 'bioDisable' : 'bioEnable')}</button>${o.bioMsg ? `<div class="err" role="status">${esc(o.bioMsg)}</div>` : ''}</div>` : ''}
+    <button class="btn danger" data-act="signout">${icon('logout', { size: 20 })}<span>${t('acctSignOut')}</span></button>
+    <button class="btn ghost" data-act="closemodal">${t('close')}</button>
+  </div></div>`;
+}
+
+// friends: requests to answer, add a friend by name, my friends (with "invite" when I am in a room)
+export function friendsSheetHTML(o) {
+  const reqs = o.reqs.map((r) => `<div class="frow"><span class="av sm" aria-hidden="true">${initial(r.name)}</span><span class="fnm">${esc(r.name)}</span>
+      <button class="btn small primary" data-act="freqok" data-id="${esc(r.id)}">${t('accept')}</button><button class="iconbtn" data-act="freqno" data-id="${esc(r.id)}" aria-label="${t('decline')}">${icon('x', { size: 18 })}</button></div>`).join('');
+  const list = o.friends.map((f) => {
+    const sent = o.invited && o.invited[f.id];
+    const act = o.room ? `<button class="btn small${sent ? '' : ' primary'}" data-act="finvite" data-id="${esc(f.id)}" ${sent ? 'disabled' : ''}>${sent ? t('invSent') : icon('send', { size: 16 }) + '<span>' + t('invite') + '</span>'}</button>` : '';
+    return `<div class="frow"><span class="av sm" aria-hidden="true">${initial(f.name)}</span><span class="fnm">${esc(f.name)}</span>${act}
+      ${o.confirmDel === f.id
+    ? `<button class="btn small danger" data-act="fdel" data-id="${esc(f.id)}">${t('unfriend')}</button>`
+    : `<button class="iconbtn" data-act="fdel" data-id="${esc(f.id)}" aria-label="${t('unfriend')}" title="${t('unfriend')}">${icon('trash', { size: 18 })}</button>`}</div>`;
+  }).join('');
+  return `<div class="overlay" data-act="closemodal"><div class="sheet friendsheet" data-stop="1">
+    <h2>${t('friends')}</h2>
+    ${o.room ? `<p class="muted small">${t('inviteHint', { code: esc(o.room) })}</p>` : ''}
+    ${reqs ? `<div class="fsec"><h3 class="sect">${t('friendReqs')}</h3>${reqs}</div>` : ''}
+    <div class="fsec"><h3 class="sect">${t('addFriend')}</h3>
+      <div class="row"><input id="f-name" class="input" maxlength="14" autocomplete="off" autocapitalize="off" placeholder="${t('friendNamePh')}" value="${esc(o.fname || '')}" aria-label="${t('friendNamePh')}"><button class="btn primary" data-act="fadd" style="flex:none" ${o.busy ? 'disabled' : ''}>${icon('plus', { size: 18 })}<span>${t('add')}</span></button></div>
+      <div class="err${o.ok ? ' good' : ''}" id="f-msg" role="status">${esc(o.msg || '')}</div></div>
+    <div class="fsec"><h3 class="sect">${t('myFriends')} (${o.friends.length})</h3>${list || `<p class="muted">${t('noFriends')}</p>`}</div>
+    <button class="btn ghost" data-act="closemodal">${t('close')}</button>
+  </div></div>`;
+}
+
+// a banner at the top: an invitation to a room or a friend request
+export function noticeHTML(n) {
+  if (n.kind === 'invite') {
+    return `<div class="notice" role="alert"><span class="av sm" aria-hidden="true">${initial(n.name)}</span><span class="ntx">${t('invNotice', { name: esc(n.name), code: esc(n.room) })}</span>
+      <button class="btn small primary" data-act="invjoin" data-id="${esc(n.id)}">${t('join')}</button><button class="iconbtn" data-act="invno" data-id="${esc(n.id)}" aria-label="${t('later')}">${icon('x', { size: 18 })}</button></div>`;
+  }
+  return `<div class="notice" role="alert"><span class="av sm" aria-hidden="true">${initial(n.name)}</span><span class="ntx">${t('reqNotice', { name: esc(n.name) })}</span>
+    <button class="btn small primary" data-act="friends">${t('open')}</button><button class="iconbtn" data-act="noticeoff" aria-label="${t('later')}">${icon('x', { size: 18 })}</button></div>`;
+}
+
+// the fingerprint lock screen
+export function lockHTML(o) {
+  return `<div class="lockscreen"><div class="lockico">${icon('finger', { size: 72 })}</div>
+    <h1>${t('lockTitle')}</h1><p class="muted">${t('lockDesc', { name: esc(o.name || '') })}</p>
+    <button class="btn primary" data-act="unlock">${icon('finger', { size: 20 })}<span>${t('lockBtn')}</span></button>
+    ${o.err ? `<div class="err" role="alert">${esc(o.err)}</div>` : ''}
+    <button class="btn ghost" data-act="lockcode">${t('lockUseCode')}</button></div>`;
 }

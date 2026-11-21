@@ -42,6 +42,16 @@
 
 لو غيّرت توزيع الحواس، الجدول الوحيد اللي بيحكم كل حاجة (الواجهة والمايك) هو `CAPS` في `js/engine.js`.
 
+## الحسابات والأصدقاء
+
+- **ضيف**: اكتب اسمك والعب. التقدم بيتحفظ على الجهاز ده بس.
+- **حساب** (اسم + كود، 6 حروف/أرقام على الأقل): التقدم بيتحفظ في الحساب نفسه فيمشي معاك على أي موبايل ويفضل محفوظ مع كل تحديث للعبة. الاسم ثابت ومش بيتكرر (مفيش حرف كبير/صغير ولا مسافات تفرق).
+- **البصمة** (اختيارية): من شاشة الحساب. بتقفل الحساب على الجهاز ده بالبصمة أو قفل الشاشة. لو دخلت من جهاز تاني لازم الاسم والكود.
+- **الأصدقاء**: ضيف صديق باسمه، هو بيقبل من إشعار، وبعدها من أي غرفة تقدر تدعوه، فيظهرله إشعار فوق الشاشة بكود الغرفة وزرار "انضم". الإشعارات بتظهر والتطبيق مفتوح (إشعارات الخلفية محتاجة سيرفر مدفوع).
+- التقدم بيتكتب في الغرف بس. التدريب كل مستوياته مفتوحة ومش بيغيّر التقدم.
+- تقنياً: الاسم بيتحوّل لإيميل داخلي (`<hex>@players.fuse-crew.app`) والكود هو الباسورد في Firebase Authentication، فلازم تفعّل **Email/Password** (Authentication ← Sign-in method). قواعد `users` و`usernames` و`friends` و`friendReqs` و`invites` في `database.rules.json` وبتتنشر أوتوماتيك من GitHub Actions.
+- **متغيّرش** اسم `fuse-progress` في localStorage ولا مسارات `users/` في قاعدة البيانات في أي تحديث، عشان تقدم اللاعبين يفضل محفوظ.
+
 ## المايك والسماعة جوه اللعبة
 
 - أول ما تدخل غرفة، المايك والسماعة بيشتغلوا لوحدهم (المتصفح هيطلب إذن المايك مرة).
@@ -76,7 +86,8 @@ python3 -m http.server 8000
 4. تبويب **Rules** ← امسح اللي موجود والصق محتوى `database.rules.json` ← **Publish**.
 5. **Project settings (علامة الترس) ← General ← Your apps ← أيقونة `</>` (Web)** ← اسم ← **Register app** (من غير Hosting) ← انسخ `firebaseConfig`.
 6. افتح `firebase-config.js` وحط القيم (`apiKey`, `authDomain`, `databaseURL`, `projectId`, `appId`). لو `databaseURL` مش في الـ snippet خده من الخطوة 3. الـ config ده مش سري، الحماية في الـ Rules.
-7. **Authentication ← Settings ← Authorized domains ← Add domain**: ضيف `USERNAME.github.io` (أو دومين Firebase Hosting). من غير الخطوة دي الدخول الخفي بيفشل.
+7. **Authentication ← Sign-in method ← Email/Password ← Enable ← Save** (للحسابات. الـ Anonymous يفضل شغال للضيوف).
+8. **Authentication ← Settings ← Authorized domains ← Add domain**: ضيف `USERNAME.github.io` (أو دومين Firebase Hosting). من غير الخطوة دي الدخول الخفي بيفشل.
 
 ## 3) GitHub خطوة بخطوة
 
@@ -106,7 +117,7 @@ python3 -m http.server 8000
 
 ## 5) بعد أي تعديل
 
-غيّر `CACHE = 'fuse-v6'` في `sw.js` إلى `fuse-v7` وهكذا، عشان التليفونات تاخد النسخة الجديدة.
+غيّر `CACHE = 'fuse-v7'` في `sw.js` إلى `fuse-v8` وهكذا، عشان التليفونات تاخد النسخة الجديدة.
 
 ## ربط Claude بـ GitHub و Firebase
 
@@ -116,7 +127,8 @@ python3 -m http.server 8000
 ## هيكل الملفات
 
 - `js/engine.js` — منطق اللعبة الصافي والأدوار (`CAPS`). المستويات والألغاز والقواعد. متختبر بـ 2000 قنبلة (200 seed × 10 مستويات).
-- `js/voice.js` + `rtc-config.js` — المايك (WebRTC) وإعدادات STUN/TURN.
+- `js/voice.js` + `rtc-config.js` — المايك (WebRTC) وإعدادات STUN/TURN (TURN اختياري: حط رابط Metered في `rtc-config.js` لو الصوت مش بيوصل على داتا الموبايل).
+- `js/account.js` / `js/social.js` — الحسابات والبصمة، والأصدقاء والدعوات.
 - `js/net.js` — Firebase، أو وضع تجريبي، أو وضع محلي في الذاكرة.
 - `js/senses.js` — شكل كل دور: قنبلة الأطرش، أزرار الأعمى (برايل ولمس)، كتاب الأخرس.
 - `js/screens.js` / `js/ui.js` / `js/i18n.js` — الشاشات والرسم والصوت والنصوص (عربي/English).

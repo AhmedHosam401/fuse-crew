@@ -6,6 +6,68 @@
         ".write": "auth != null",
         ".validate": "$room.matches(/^[A-Z]{4}$/)"
       }
+    },
+
+    "usernames": {
+      "$key": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()))",
+        ".validate": "$key.matches(/^[0-9a-f]{2,120}$/) && newData.isString()"
+      }
+    },
+
+    "users": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['name', 'key', 'progress'])",
+        "name": { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 14 && (!data.exists() || newData.val() === data.val())" },
+        "key": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{2,120}$/) && (!data.exists() || newData.val() === data.val())" },
+        "progress": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10 && newData.val() % 1 === 0 && (!data.exists() || newData.val() >= data.val())" },
+        "created": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "friends": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$f": {
+          ".write": "auth != null && (auth.uid === $uid || (auth.uid === $f && (!newData.exists() || root.child('friendReqs').child($f).child($uid).exists())))",
+          ".validate": "newData.hasChildren(['name', 't']) && $uid !== $f",
+          "name": { ".validate": "newData.isString() && newData.val() === root.child('users').child($f).child('name').val()" },
+          "t": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "friendReqs": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$from": {
+          ".write": "auth != null && (auth.uid === $from || auth.uid === $to)",
+          ".validate": "newData.hasChildren(['name', 't']) && $from !== $to",
+          "name": { ".validate": "newData.isString() && newData.val() === root.child('users').child($from).child('name').val()" },
+          "t": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "invites": {
+      "$to": {
+        ".read": "auth != null && auth.uid === $to",
+        "$id": {
+          ".write": "auth != null && (auth.uid === $to || (!data.exists() && root.child('friends').child($to).child(auth.uid).exists()))",
+          ".validate": "newData.hasChildren(['from', 'name', 'room', 't']) && newData.child('from').val() === auth.uid",
+          "from": { ".validate": "newData.isString()" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 14" },
+          "room": { ".validate": "newData.isString() && newData.val().matches(/^[A-Z]{4}$/)" },
+          "t": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
     }
   }
 }
