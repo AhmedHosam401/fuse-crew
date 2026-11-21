@@ -115,6 +115,19 @@ export function levelsHTML(room, isHost, practice) {
     ${isHost ? '' : `<p class="muted">${t('hostPicksLevel')}</p>`}</div>`;
 }
 
+// before the round everybody talks and hears everybody: say plainly whether that is really the case right now
+export function voiceStatusHTML(room, uid, v) {
+  if (!v || !v.supported || !v.joined) return '';
+  const others = Object.keys(room.players || {}).filter((id) => id !== uid);
+  const live = others.filter((id) => room.players[id].voice === true);
+  let key = 'voiceAllOk'; let cls = 'good'; let n = 0;
+  if (!others.length) { key = 'voiceAlone'; cls = ''; }
+  else if (!v.micOk) { key = 'voiceNoMic'; cls = 'bad'; }
+  else if (live.length < others.length) { key = 'voiceWaitMic'; cls = ''; n = others.length - live.length; }
+  else if (v.connected < live.length) { key = 'voiceLinking'; cls = ''; }
+  return `<p class="vstatus ${cls}" role="status">${t(key, { n })}</p>`;
+}
+
 export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite, view, no3d) {
   const ids = Object.keys(room.players || {}).sort((a, b) => room.players[a].joinedAt - room.players[b].joinedAt);
   const isHost = room.host === uid;
@@ -170,6 +183,7 @@ export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite, view, no
     ${modeCard}
     ${picker}
     ${soloLocal ? '' : voiceBarHTML(voice, null, false)}
+    ${soloLocal ? '' : voiceStatusHTML(room, uid, voice)}
     ${startBlock}
     ${soloLocal ? '' : `<p class="muted tip">${t('voiceTip')}</p>${voice && voice.joined ? `<p class="muted tip">${t('vuTip')}</p>` : ''}`}`;
 }

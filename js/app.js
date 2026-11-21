@@ -275,7 +275,8 @@ function renderPlay() {
   // the Mute's book is redrawn only when the page / the mistakes / the round change, so a page flip plays once
   region('main', V.mainHTML(role, c.bomb, c.game, S.mpage, S.flip), role === 'mute' ? `book|${c.r.id}|${S.mpage}|${Math.min(c.game.strikes, 2)}` : undefined);
   S.flip = null;
-  const restricted = c.game.status === 'playing';
+  // the senses are locked only once the clock actually runs: during the "get ready" countdown everybody still talks and hears
+  const restricted = c.game.status === 'playing' && c.now >= c.game.startedAt;
   if (S.voice) S.voice.setRules({ speak: !restricted || E.CAPS[role].speaks, hear: !restricted || E.CAPS[role].hears });
   region('voice', S.local ? '' : V.voiceBarHTML(S.vs, role, restricted));
   region('pal', role === 'mute' ? paletteHTML(S.ptab) : '');
