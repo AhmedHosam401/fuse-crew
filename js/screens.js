@@ -19,6 +19,22 @@ export const sfxBtn = () => {
   const label = t(sfx.enabled ? 'sfxOn' : 'sfxOff');
   return `<button class="iconbtn" data-act="sfx" aria-label="${label}" title="${label}">${icon('note', { off: !sfx.enabled })}</button>`;
 };
+// how this player sees the game: the plain interface, an illustrated 2D scene or a 3D diorama (each player chooses for themself)
+export const viewBtn = (view) => {
+  const label = t('viewBtn');
+  return `<button class="btn small ghost viewbtn" data-act="viewcycle" aria-label="${label}" title="${label}">${icon('view' + (view === 'ui' ? 'ui' : view), { size: 18 })}<span>${t('view_' + view)}</span></button>`;
+};
+export function viewCardHTML(view, no3d) {
+  const opt = (v) => `<button class="segbtn${view === v ? ' on' : ''}" data-act="view" data-v="${v}" aria-pressed="${view === v}"${v === '3d' && no3d ? ' disabled' : ''}>${icon('view' + v, { size: 18 })}<span>${t('view_' + v)}</span></button>`;
+  return `<div class="card viewcard"><h3 class="sect">${t('viewTitle')}</h3>
+    <div class="seg" role="group" aria-label="${t('viewTitle')}">${opt('ui')}${opt('2d')}${opt('3d')}</div>
+    <p class="muted">${t('viewDesc_' + view)}${no3d && view !== '3d' ? `<br>${t('view3dNo')}` : ''}</p>
+    <p class="muted tip">${t('viewTip')}</p></div>`;
+}
+// the picture above the controls: the 2D svg, or the host the 3D canvas is added to
+export const sceneWrapHTML = (role, inner, kind) =>
+  `<div class="scene ${kind}" style="--c:${ROLE_COLOR[role]}"${kind === 's3d' ? ' id="sc3dhost"' : ''}>${inner}<span class="sc-tag">${avatar(role, 20)}${roleName(role)}</span></div>`;
+
 const leaveBtn = () => `<button class="btn small ghost" data-act="leave">${icon('back', { size: 18 })}<span>${t('leave')}</span></button>`;
 
 // ---------------------------------------------------------------- boot (a saved room is being restored)
@@ -99,7 +115,7 @@ export function levelsHTML(room, isHost, practice) {
     ${isHost ? '' : `<p class="muted">${t('hostPicksLevel')}</p>`}</div>`;
 }
 
-export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite) {
+export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite, view, no3d) {
   const ids = Object.keys(room.players || {}).sort((a, b) => room.players[a].joinedAt - room.players[b].joinedAt);
   const isHost = room.host === uid;
   const mode = room.roleMode === 'pick' ? 'pick' : 'random';
@@ -150,6 +166,7 @@ export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite) {
     <div><h3 class="sect">${t('players')} ${n}/3</h3><div class="slots">${slots}</div></div>
     ${canInvite && n < 3 ? `<button class="btn" data-act="friends">${icon('users', { size: 20 })}<span>${t('inviteFriend')}</span></button>` : ''}`}
     ${levelsHTML(room, isHost, soloLocal)}
+    ${viewCardHTML(view || 'ui', !!no3d)}
     ${modeCard}
     ${picker}
     ${soloLocal ? '' : voiceBarHTML(voice, null, false)}
@@ -158,9 +175,9 @@ export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite) {
 }
 
 // ---------------------------------------------------------------- play: skeleton + regions
-export const playSkeleton = () => `<div class="topline playtools">${leaveBtn()}<span class="tools">${themeBtn()}${sfxBtn()}</span></div>
+export const playSkeleton = (view) => `<div class="topline playtools">${leaveBtn()}<span class="tools">${viewBtn(view || 'ui')}${themeBtn()}${sfxBtn()}</span></div>
   <div id="r-head" class="head"><div id="r-top"></div><div id="r-voice"></div></div>
-  <div id="r-role"></div><div id="r-main"></div>
+  <div id="r-role"></div><div id="r-scene"></div><div id="r-main"></div>
   <div id="r-dock"><div id="r-gest"></div><div id="r-pal"></div></div><div id="r-log"></div><div id="r-say"></div>
   <div class="spacer"></div>
   <div id="r-over"></div>`;

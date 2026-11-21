@@ -34,6 +34,9 @@ const ICONS = {
   send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
   finger: '<path d="M12 11a2 2 0 0 0-2 2c0 3 .5 5.5 1.5 8"/><path d="M16 13c0 3-.5 5-1.5 7.5"/><path d="M8 14.5c0 1.2-.1 2.4-.4 3.5"/><path d="M5.5 9a7 7 0 0 1 13 3c0 1.3-.1 2.7-.4 4"/><path d="M3 13c0-1.5.2-3 .8-4.4"/><path d="M8 5.2A7 7 0 0 1 12 4"/>',
   lock2: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  viewui: '<rect x="5" y="2" width="14" height="20" rx="3"/><path d="M9 7h6M9 11h6M9 15h3"/>',
+  view2d: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="11" r="2.5"/><path d="M3 17l5-4 4 3 3-2 6 4"/>',
+  view3d: '<path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/>',
 };
 // `off` draws a diagonal slash over the icon (a muted mic, silenced headphones, ...)
 export function icon(name, { size = 22, off = false } = {}) {

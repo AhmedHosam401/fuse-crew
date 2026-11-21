@@ -1,11 +1,13 @@
 // Service worker: makes the app installable and lets it open offline (one-phone mode works with no internet).
 // Bump CACHE whenever you deploy a new version so phones pick up the update.
-const CACHE = 'fuse-v7';
+// js/scene3d.js and vendor/three.module.min.js are NOT listed: only phones that pick the 3D view download them (once); the
+// fetch handler below then keeps them cached like everything else.
+const CACHE = 'fuse-v8';
 const ASSETS = [
   './', 'index.html', 'style.css', 'firebase-config.js', 'rtc-config.js', 'manifest.webmanifest',
   'fonts/cairo-arabic-wght-normal.woff2', 'fonts/cairo-latin-wght-normal.woff2',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
-  'js/app.js', 'js/engine.js', 'js/senses.js', 'js/account.js', 'js/social.js', 'js/i18n.js', 'js/net.js', 'js/screens.js', 'js/ui.js', 'js/voice.js',
+  'js/app.js', 'js/engine.js', 'js/senses.js', 'js/account.js', 'js/social.js', 'js/scene.js', 'js/i18n.js', 'js/net.js', 'js/screens.js', 'js/ui.js', 'js/voice.js',
 ];
 
 self.addEventListener('install', (e) => {

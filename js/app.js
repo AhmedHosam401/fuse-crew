@@ -8,6 +8,7 @@ import { lampLit, morseState, bookChapters } from './senses.js';
 import { createVoice, voiceSupported } from './voice.js';
 import * as Acc from './account.js';
 import * as Soc from './social.js';
+import * as Sc from './scene.js';
 
 const app = document.getElementById('app');
 const modal = document.getElementById('modal');
@@ -38,6 +39,8 @@ const S = {
   sheet: null, authTab: 'in', authName: '', authErr: '', authBusy: false,
   fname: '', fmsg: '', fok: false, fbusy: false, fdel: null, invited: {}, bioMsg: '',
   notice: null, dismissed: new Set(), reqAlert: null, locked: false, lockErr: '',
+  // how I see the game (my own choice, kept on this device): 'ui' | '2d' | '3d'. no3d = this browser cannot do WebGL.
+  view: Sc.VIEWS.includes(store.get('fuse-view')) ? store.get('fuse-view') : 'ui', no3d: false, ev: null, sc3: null, sc3Busy: false, scModel: null,
 };
 
 // ---------------------------------------------------------------- small utils
@@ -140,12 +143,69 @@ function toggleEar() {
 }
 const myRoles = () => (S.room && S.room.round ? E.ROLES.filter((x) => S.room.round.roles[x] === S.uid) : []);
 
+// ---------------------------------------------------------------- game view (interface / 2D / 3D)
+const webglOk = () => {
+  try { const cv = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (cv.getContext('webgl2') || cv.getContext('webgl'))); } catch (e) { return false; }
+};
+const effView = () => (S.view === '3d' && S.no3d ? '2d' : S.view);
+function setView(v, save = true) {
+  if (!Sc.VIEWS.includes(v)) return;
+  if (v === '3d') { if (S.no3d || !webglOk()) { S.no3d = true; toast(t('view3dNo')); return; } import('./scene3d.js').catch(() => {}); }   // start the download now, so a round does not wait for it
+  S.view = v; if (save) store.set('fuse-view', v);
+  S.regions = {}; if (S.screen === 'play') { sceneStop(); S.skel = ''; }
+  render();
+}
+function cycleView() {
+  const next = (v) => Sc.VIEWS[(Sc.VIEWS.indexOf(v) + 1) % Sc.VIEWS.length];
+  let v = next(S.view);
+  if (v === '3d' && (S.no3d || !webglOk())) { S.no3d = true; v = next(v); }      // no WebGL here: skip 3D
+  setView(v);
+}
+function sceneStop() {
+  if (S.sc3) { try { S.sc3.ctl.destroy(); } catch (e) { /* ignore */ } S.sc3 = null; }
+}
+// the picture above the controls; redrawn only when the mood / role / mistakes change (the fuse + LED are patched in place)
+function renderScene(c, role) {
+  const view = effView();
+  const m = Sc.sceneModel(c, role, S.ev);
+  S.scModel = m;
+  if (view === 'ui') { sceneStop(); region('scene', ''); return; }
+  const mood = Sc.moodOf(m);
+  if (view === '2d') {
+    sceneStop();
+    region('scene', V.sceneWrapHTML(role, Sc.scene2dHTML(m, mood), 's2d'), Sc.sceneKey(m, mood));
+    Sc.tick2d(document.getElementById('r-scene'), m);
+    return;
+  }
+  region('scene', V.sceneWrapHTML(role, '', 's3d'), `3d|${c.r.id}|${role}`);
+  ensure3d(role);
+}
+async function ensure3d(role) {
+  if (S.sc3 && document.body.contains(S.sc3.canvas) && S.sc3.role === role) { S.sc3.ctl.update(S.scModel); return; }
+  sceneStop();
+  if (S.sc3Busy) return;
+  S.sc3Busy = true;
+  try {
+    if (!webglOk()) throw new Error('no webgl');
+    const mod = await import('./scene3d.js');
+    const host = document.getElementById('sc3dhost');
+    if (effView() !== '3d' || S.screen !== 'play' || !host || S.role !== role) return;
+    const ctl = mod.create(host, role);
+    S.sc3 = { ctl, canvas: ctl.canvas, role };
+    ctl.update(S.scModel);
+  } catch (e) {
+    console.error(e);
+    S.no3d = true; S.regions = {}; sceneStop(); toast(t('view3dFail'));
+  } finally { S.sc3Busy = false; }
+}
+
 // ---------------------------------------------------------------- rendering
 // The Blind's screen is black (in both themes); every other screen follows the theme
 function applySense() {
   const want = S.screen === 'play' && S.role === 'blind' ? 'blind' : '';
   const root = document.documentElement;
   document.body.classList.toggle('playing', S.screen === 'play');
+  document.body.dataset.view = S.screen === 'play' ? effView() : '';
   document.body.classList.toggle('mute', S.screen === 'play' && S.role === 'mute');   // the Mute's screen is locked to the display
   if ((root.dataset.sense || '') === want) return;
   if (want) root.dataset.sense = want; else delete root.dataset.sense;
@@ -156,6 +216,7 @@ function applySense() {
 function render() {
   applySense();
   renderNotice();
+  if (S.screen !== 'play') sceneStop();
   if (S.screen === 'lock') return renderLock();
   if (S.screen === 'boot') return renderBoot();
   if (S.screen === 'home') return renderHome();
@@ -182,7 +243,7 @@ function renderHome() {
 function renderLobby() {
   S.skel = 'lobby';
   if (S.voice) S.voice.setRules({ speak: true, hear: true });     // between rounds everybody can talk and hear
-  app.innerHTML = V.lobbyHTML(S.room, S.code, S.uid, S.local, S.vs, !!S.profile && !S.local);
+  app.innerHTML = V.lobbyHTML(S.room, S.code, S.uid, S.local, S.vs, !!S.profile && !S.local, effView() === '3d' ? '3d' : S.view, S.no3d);
 }
 
 function region(id, html, key) {
@@ -197,7 +258,7 @@ function region(id, html, key) {
 function renderPlay() {
   const c = cur();
   if (!c) return;
-  if (S.skel !== 'play') { app.innerHTML = V.playSkeleton(); S.skel = 'play'; S.regions = {}; requestWake(); }
+  if (S.skel !== 'play') { app.innerHTML = V.playSkeleton(effView()); S.skel = 'play'; S.regions = {}; sceneStop(); requestWake(); }
   const roles = myRoles();
   if (!roles.includes(S.role)) S.role = roles[0];
   const role = S.role;
@@ -235,6 +296,7 @@ function renderPlay() {
   const box = document.getElementById('logbox');
   if (box) box.scrollTop = box.scrollHeight;
   fx(c);
+  renderScene(c, role);
 }
 
 // timer digits / bar are patched in place, so the pulse animation is not restarted every second
@@ -253,14 +315,14 @@ function updateClock(c) {
 function fx(c) {
   const g = c.game;
   if (S.prevRound !== c.r.id) {
-    Object.assign(S, { prevRound: c.r.id, prevStrikes: g.strikes, prevCur: g.cur, endSounded: false, lastSec: -1 });
+    Object.assign(S, { prevRound: c.r.id, prevStrikes: g.strikes, prevCur: g.cur, endSounded: false, lastSec: -1, ev: null });
     return;
   }
   if (g.status === 'playing') {
     if (g.strikes > S.prevStrikes) {
-      sound.strike(); S.shakeUntil = Date.now() + 450;
+      sound.strike(); S.shakeUntil = Date.now() + 450; S.ev = { k: 'strike', at: Date.now() };
       app.classList.remove('flash-red'); void app.offsetWidth; app.classList.add('flash-red');
-    } else if (g.cur > S.prevCur) sound.ok();
+    } else if (g.cur > S.prevCur) { sound.ok(); S.ev = { k: 'advance', at: Date.now() }; }
   }
   S.prevStrikes = g.strikes; S.prevCur = g.cur;
   if (g.status !== 'playing' && !S.endSounded) {
@@ -826,6 +888,8 @@ document.addEventListener('click', (e) => {
   if (el.classList.contains('overlay') && e.target.closest('[data-stop]')) return;
   const d = el.dataset;
   switch (d.act) {
+    case 'view': setView(d.v); break;
+    case 'viewcycle': cycleView(); break;
     case 'lang': setLang(getLang() === 'ar' ? 'en' : 'ar'); S.skel = ''; S.regions = {}; render(); break;
     case 'sfx': toggleSfx(); S.skel = ''; S.regions = {}; render(); break;
     case 'theme': theme.toggle(); S.skel = ''; S.regions = {}; render(); break;
@@ -1048,7 +1112,7 @@ async function continueBoot() {
     if (S.screen === 'home') render();
   }
 }
-if (location.search.includes('debug')) window.__fuse = { S, E, cur, voice: () => S.voice, onBack, nav, Soc, Acc };
+if (location.search.includes('debug')) window.__fuse = { S, E, Sc, cur, voice: () => S.voice, onBack, nav, Soc, Acc };
 boot();
 
 if ('serviceWorker' in navigator) {
