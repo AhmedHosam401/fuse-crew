@@ -4,16 +4,33 @@
 //   speak=false -> the local mic track is disabled (silence is sent)
 //   hear=false  -> every incoming <audio> element is muted
 // On top of that the player has two switches of their own (setUserMuted / setUserDeaf); both start ON (mic and audio open).
-import { ICE_SERVERS } from '../rtc-config.js';
+import { ICE_SERVERS, TURN_CREDENTIALS_URL, TURN_SERVERS } from '../rtc-config.js';
 
 export const voiceSupported = () => typeof RTCPeerConnection !== 'undefined';
+
+// The ICE server list: STUN, any fixed TURN servers, and (if configured) fresh TURN credentials from the provider.
+// Never throws and never waits long: a slow or broken provider just means STUN-only, exactly as before.
+export async function resolveIce(cfg = { stun: ICE_SERVERS, fixed: TURN_SERVERS, url: TURN_CREDENTIALS_URL }, fetchFn = (globalThis.fetch && globalThis.fetch.bind(globalThis)), timeoutMs = 3500) {
+  const list = [...cfg.stun, ...(cfg.fixed || [])];
+  if (!cfg.url || !fetchFn) return list;
+  let timer = null;
+  try {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    timer = setTimeout(() => ctl && ctl.abort(), timeoutMs);
+    const res = await fetchFn(cfg.url, ctl ? { signal: ctl.signal } : undefined);
+    if (!res.ok) throw new Error('http ' + res.status);
+    const extra = await res.json();
+    const ok = (Array.isArray(extra) ? extra : []).filter((s) => s && s.urls && (typeof s.urls === 'string' || Array.isArray(s.urls)));
+    return [...list, ...ok];
+  } catch (e) { return list; } finally { clearTimeout(timer); }
+}
 
 export function createVoice(net, code, uid, onChange) {
   const base = `rooms/${code}/rtc`;
   const peers = new Map();            // remoteUid -> { pc, cid, audio, pending, outbox, ready, created }
   const early = new Map();            // "uid:cid" -> ICE messages that arrived before their offer
   const seen = new Set();
-  let stream = null; let track = null;
+  let stream = null; let track = null; let ice = ICE_SERVERS;
   let joined = false; let micOk = false; let userMuted = false; let userDeaf = false; let blocked = false;
   let rules = { speak: true, hear: true };
   let lastPlayers = {}; let unsub = null; let timer = null; let chain = Promise.resolve();
@@ -41,7 +58,7 @@ export function createVoice(net, code, uid, onChange) {
   }
 
   function makePeer(id, cid) {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers: ice });
     const peer = { pc, cid, audio: null, pending: [], outbox: [], ready: false, created: Date.now() };
     if (track) pc.addTrack(track, stream); else pc.addTransceiver('audio', { direction: 'recvonly' });
     pc.onicecandidate = (e) => {
@@ -139,10 +156,12 @@ export function createVoice(net, code, uid, onChange) {
   return {
     async join() {
       if (joined) return status();
+      const iceP = resolveIce().then((l) => { ice = l; });          // asked in parallel with the mic permission
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         track = stream.getAudioTracks()[0]; micOk = !!track;
       } catch (e) { micOk = false; stream = null; track = null; }
+      await iceP;
       await net.remove(`${base}/${uid}`);
       unsub = net.on(`${base}/${uid}`, onInbox);
       timer = setInterval(() => sync(lastPlayers), 3000);

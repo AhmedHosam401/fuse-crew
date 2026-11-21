@@ -77,7 +77,7 @@ export function pickedMap(room) {
 }
 
 // the ten levels: a grid (locked ones can't be chosen) and what the chosen level is made of
-export function levelsHTML(room, isHost) {
+export function levelsHTML(room, isHost, practice) {
   const unlocked = Math.min(LEVEL_COUNT, Math.max(1, room.unlocked || 1));
   const sel = Math.min(unlocked, Math.max(1, room.level || unlocked));
   const def = levelDef(sel);
@@ -94,7 +94,7 @@ export function levelsHTML(room, isHost) {
     <div class="lvlinfo"><b>${t('level', { n: sel })}${def.tag ? ` · ${t('lvl_' + def.tag)}` : ''}</b>
       <div class="chips">${chips}</div>
       <p class="muted">${def.tag ? `${t('lvlDesc_' + def.tag)}<br>` : ''}${t('lvlMeta', { m: mins, s: def.strikes || MAX_STRIKES })}</p></div>
-    ${unlocked < LEVEL_COUNT ? `<p class="muted tip">${t('lvlHowUnlock')}</p>` : `<p class="muted tip">${t('lvlAllOpen')}</p>`}
+    ${practice ? `<p class="muted tip">${t('lvlPractice')}</p>` : unlocked < LEVEL_COUNT ? `<p class="muted tip">${t('lvlHowUnlock')}</p>` : `<p class="muted tip">${t('lvlAllOpen')}</p>`}
     ${isHost ? '' : `<p class="muted">${t('hostPicksLevel')}</p>`}</div>`;
 }
 
@@ -147,7 +147,7 @@ export function lobbyHTML(room, code, uid, soloLocal, voice) {
       <div style="text-align:center;margin-top:8px"><button class="btn small ghost" data-act="copy">${icon('copy', { size: 18 })}<span>${t('shareRoom')}</span></button></div>
     </div>
     <div><h3 class="sect">${t('players')} ${n}/3</h3><div class="slots">${slots}</div></div>`}
-    ${levelsHTML(room, isHost)}
+    ${levelsHTML(room, isHost, soloLocal)}
     ${modeCard}
     ${picker}
     ${soloLocal ? '' : voiceBarHTML(voice, null, false)}
@@ -159,7 +159,7 @@ export function lobbyHTML(room, code, uid, soloLocal, voice) {
 export const playSkeleton = () => `<div class="topline playtools">${leaveBtn()}<span class="tools">${themeBtn()}${sfxBtn()}</span></div>
   <div id="r-head" class="head"><div id="r-top"></div><div id="r-voice"></div></div>
   <div id="r-role"></div><div id="r-main"></div>
-  <div id="r-pal"></div><div id="r-gest"></div><div id="r-log"></div><div id="r-say"></div>
+  <div id="r-dock"><div id="r-gest"></div><div id="r-pal"></div></div><div id="r-log"></div><div id="r-say"></div>
   <div class="spacer"></div>
   <div id="r-over"></div>`;
 
@@ -172,7 +172,7 @@ export function topHTML(game, round, bomb, now, shaking, role) {
   const blind = role === 'blind';
   return `<div class="topbar${shaking ? ' shake' : ''}">
     <div class="strikes" title="${t('strikesUsed')}">${strikes}</div>
-    ${blind ? `<div class="timer hide" id="timer" aria-hidden="true">--:--</div>` : `<div class="timer${rem <= 15000 ? ' low' : ''}" id="timer">${fmt(rem)}</div>`}
+    ${blind ? `<div class="timer hide" id="timer" data-clock="1" role="timer" aria-label="${t('clockHold')}">--:--</div>` : `<div class="timer${rem <= 15000 ? ' low' : ''}" id="timer">${fmt(rem)}</div>`}
     <div class="meta">${t('level', { n: round.level })}<br>${t('module', { a: Math.min(game.cur + 1, bomb.modules.length), b: bomb.modules.length })}</div>
     ${blind ? '' : `<div class="bar"><b id="barfill" style="width:${pct}%"></b></div>`}</div>`;
 }
@@ -198,6 +198,14 @@ export function mainHTML(role, bomb, game, mpage, flip) {
 // o.flagged = the Mute just changed the signals: the box is highlighted for the others
 export function gestHTML(role, list, o = {}) {
   const mute = role === 'mute';
+  if (mute) {
+    // the Mute's dock: the signals sent so far (a tap removes one) with undo / clear beside them, all on one compact row
+    const chips = list.length
+      ? list.slice(-30).map((g, i, a) => gestureChip(g.g, i === a.length - 1, g.k)).join('')
+      : `<span class="empty">${t('noGesturesMute')}</span>`;
+    const tools = list.length ? `<span class="gtools"><button class="iconbtn" data-act="gundo" aria-label="${t('gUndo')}" title="${t('gUndo')}">${icon('eraser', { size: 20 })}</button><button class="iconbtn" data-act="gclear" aria-label="${t('gClear')}" title="${t('gClear')}">${icon('trash', { size: 20 })}</button></span>` : '';
+    return `<div class="gdock"><div class="gstrip" id="gstrip">${chips}</div>${tools}</div>`;
+  }
   const label = mute ? t('sentLabel') : t('gotLabel');
   const chips = list.length
     ? list.slice(-12).map((g, i, a) => gestureChip(g.g, i === a.length - 1, mute ? g.k : null)).join('')
@@ -232,14 +240,15 @@ export function overHTML(o) {
   const won = g.status === 'won';
   const left = remainingMs(g, g.endedAt);
   const max = g.maxStrikes || MAX_STRIKES;
-  const last = won && o.level >= LEVEL_COUNT;
+  const atEnd = won && o.level >= LEVEL_COUNT;       // level 10 has no "next"
+  const last = atEnd && !o.local;                    // the trophy is for the real game, not for practice
   const next = o.isHost
-    ? `${last ? '' : `<button class="btn primary" data-act="next">${won ? t('nextLevel') : t('retry')}</button>`}
-       <button class="btn${last ? ' primary' : ''}" data-act="toroom">${t(o.local ? 'backToLevels' : 'backToRoom')}</button>`
+    ? `${atEnd ? '' : `<button class="btn primary" data-act="next">${won ? t('nextLevel') : t('retry')}</button>`}
+       <button class="btn${atEnd ? ' primary' : ''}" data-act="toroom">${t(o.local ? 'backToLevels' : 'backToRoom')}</button>`
     : `<p class="muted">${t('waitNext')}</p>`;
   return `<div class="overlay"><div class="sheet ${won ? 'win' : 'lose'}">
     <h2>${last ? t('wonAll') : won ? t('won') : t('lost')}</h2>
-    ${won ? (last ? `<p class="muted">${t('wonAllDesc')}</p>` : `<p class="unlock">${icon('check', { size: 18 })}${t('levelOpen', { n: o.level + 1 })}</p>`) : `<p class="muted">${t('reason_' + (g.reason || 'time'), { n: max })}</p>`}
+    ${won ? (last ? `<p class="muted">${t('wonAllDesc')}</p>` : o.local ? '' : `<p class="unlock">${icon('check', { size: 18 })}${t('levelOpen', { n: o.level + 1 })}</p>`) : `<p class="muted">${t('reason_' + (g.reason || 'time'), { n: max })}</p>`}
     <div class="stats">
       <div><span class="muted">${t('timeLeft')}</span><b>${won ? fmt(left) : '0:00'}</b></div>
       <div><span class="muted">${t('strikesUsed')}</span><b>${g.strikes}/${max}</b></div>

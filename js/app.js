@@ -2,7 +2,7 @@
 import { createNet, createLocalNet, isFirebaseConfigured, hasLocalSave, clearLocalSave } from './net.js';
 import * as E from './engine.js';
 import { t, setLang, initLang, getLang } from './i18n.js';
-import { sound, toggleSfx, $, paletteHTML, theme } from './ui.js';
+import { sound, toggleSfx, $, paletteHTML, theme, fmt } from './ui.js';
 import * as V from './screens.js';
 import { lampLit, morseState, bookChapters } from './senses.js';
 import { createVoice, voiceSupported } from './voice.js';
@@ -130,6 +130,7 @@ function applySense() {
   const want = S.screen === 'play' && S.role === 'blind' ? 'blind' : '';
   const root = document.documentElement;
   document.body.classList.toggle('playing', S.screen === 'play');
+  document.body.classList.toggle('mute', S.screen === 'play' && S.role === 'mute');   // the Mute's screen is locked to the display
   if ((root.dataset.sense || '') === want) return;
   if (want) root.dataset.sense = want; else delete root.dataset.sense;
   const m = document.querySelector('meta[name="theme-color"]');
@@ -163,10 +164,11 @@ function renderLobby() {
 
 function region(id, html, key) {
   const k = key === undefined ? html : key;
-  if (S.regions[id] === k) return;
+  if (S.regions[id] === k) return false;
   S.regions[id] = k;
   const el = document.getElementById('r-' + id);
   if (el) el.innerHTML = html;
+  return true;
 }
 
 function renderPlay() {
@@ -194,10 +196,12 @@ function renderPlay() {
   region('voice', S.local ? '' : V.voiceBarHTML(S.vs, role, restricted));
   region('pal', role === 'mute' ? paletteHTML(S.ptab) : '');
   const flagged = role === 'deaf' && Date.now() < S.gflag;       // the Mute changed the signals a moment ago
-  region('gest', role === 'mute' || role === 'deaf' ? V.gestHTML(role, gestures, { flagged }) : '');
+  if (region('gest', role === 'mute' || role === 'deaf' ? V.gestHTML(role, gestures, { flagged }) : '') && role === 'mute') {
+    const gs = document.getElementById('gstrip'); if (gs) gs.scrollLeft = gs.scrollWidth;      // the newest signal is always in view
+  }
   // online with a working mic people TALK: the typed-message box is only for practice (one phone) or when the voice is not available
   const talking = !S.local && !!S.vs.joined && S.vs.micOk !== false;
-  region('log', role === 'deaf' ? V.deafHTML() : talking ? '' : V.logHTML(chat, players));
+  region('log', role === 'deaf' ? V.deafHTML() : talking || (role === 'mute' && !chat.length) ? '' : V.logHTML(chat, players));
   region('say', role === 'mute' ? V.muteHTML() : talking ? V.speakHTML() : V.sayHTML());
   // The 5-second "get ready" sheet is drawn ONCE per round (its key has no digits) and only the number is patched in place;
   // redrawing it every second restarted its fade-in and made the whole sheet blink.
@@ -241,9 +245,11 @@ function fx(c) {
     if (g.status === 'won') {
       sound.win();
       const nxt = Math.min(E.LEVEL_COUNT, c.r.level + 1);
-      saveProgress(nxt);
-      // the host opens the next level for the whole room and pre-selects it for the level list
-      if (S.room.host === S.uid && unlockedOf(S.room) < nxt) S.net.update(`rooms/${S.code}`, { unlocked: nxt, level: nxt });
+      if (!S.local) {                                   // practice never changes the progress
+        saveProgress(nxt);
+        // the host opens the next level for the whole room and pre-selects it for the level list
+        if (S.room.host === S.uid && unlockedOf(S.room) < nxt) S.net.update(`rooms/${S.code}`, { unlocked: nxt, level: nxt });
+      }
     } else sound.boom();
     releaseWake();
   }
@@ -379,6 +385,7 @@ function onRoom(raw) {
 
 // level progress: every device remembers the highest unlocked level; an old room without one gets it from its host
 function syncLevels(room) {
+  if (S.local) return;                                       // practice: all levels open, progress untouched
   if (room.unlocked) saveProgress(room.unlocked);
   else if (room.host === S.uid) S.net.set(`rooms/${S.code}/unlocked`, progress());
 }
@@ -447,7 +454,8 @@ async function joinRoom() {
 async function startLocal() {
   const name = ($('#name') && $('#name').value.trim().slice(0, 14)) || S.name || (getLang() === 'ar' ? 'أنا' : 'Me');
   S.net = createLocalNet({ restore: false }); S.uid = S.net.uid; S.local = true;
-  await S.net.set('rooms/SOLO', { host: S.uid, phase: 'lobby', roundNo: 0, createdAt: Date.now(), unlocked: progress(), level: progress(), players: { [S.uid]: { name, joinedAt: Date.now(), online: true } } });
+  // practice is free: every level is open, in any order, and nothing here touches the saved progress
+  await S.net.set('rooms/SOLO', { host: S.uid, phase: 'lobby', roundNo: 0, createdAt: Date.now(), unlocked: E.LEVEL_COUNT, level: 1, players: { [S.uid]: { name, joinedAt: Date.now(), online: true } } });
   await enter('SOLO');                    // the practice lobby: pick a level, then start
 }
 
@@ -655,9 +663,9 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 const LONG_PRESS = 450;
 const tactState = { el: null, id: null, t0: 0, timer: 0, revealed: false };
 let revealEl = null;
-function showReveal(txt) {
+function showReveal(txt, wide) {
   if (!revealEl) { revealEl = document.createElement('div'); revealEl.className = 'reveal'; revealEl.setAttribute('aria-hidden', 'true'); document.body.appendChild(revealEl); }
-  revealEl.textContent = txt; revealEl.classList.add('on');
+  revealEl.textContent = txt; revealEl.classList.toggle('time', !!wide); revealEl.classList.add('on');
 }
 function tactAction(el, held) {
   const d = el.dataset;
@@ -694,7 +702,30 @@ document.addEventListener('pointerdown', (e) => {
 }, true);
 document.addEventListener('pointerup', (e) => { if (tactState.el && e.pointerId === tactState.id) tactEnd(true); }, true);
 document.addEventListener('pointercancel', (e) => { if (tactState.el && e.pointerId === tactState.id) tactEnd(false); }, true);
-document.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-tact]')) e.preventDefault(); });
+document.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-tact], [data-clock]')) e.preventDefault(); });
+
+// The Blind's clock is hidden. Holding a finger on it shows the time for as long as it is held (and a moment after).
+const clockHold = { id: null, start: 0, iv: 0, off: 0, shown: false };
+function clockText() {
+  const c = cur();
+  return c ? fmt(Math.max(0, E.remainingMs(c.game, Math.max(c.now, c.game.startedAt)))) : '--:--';
+}
+function clockStop() {
+  clearTimeout(clockHold.start); clearInterval(clockHold.iv); clockHold.id = null;
+  if (clockHold.shown) { clearTimeout(clockHold.off); clockHold.off = setTimeout(() => { if (revealEl && !tactState.el) revealEl.classList.remove('on'); clockHold.shown = false; }, 1500); }
+}
+document.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('[data-clock]');
+  if (!el || e.button > 0 || S.role !== 'blind') return;
+  clearTimeout(clockHold.off); clockStop();
+  clockHold.id = e.pointerId;
+  clockHold.start = setTimeout(() => {
+    clockHold.shown = true; buzz(20); showReveal(clockText(), true);
+    clockHold.iv = setInterval(() => showReveal(clockText(), true), 200);
+  }, LONG_PRESS);
+}, true);
+document.addEventListener('pointerup', (e) => { if (clockHold.id === e.pointerId) clockStop(); }, true);
+document.addEventListener('pointercancel', (e) => { if (clockHold.id === e.pointerId) clockStop(); }, true);
 
 // the Deaf's flashing lamps and morse lamp: drawn from the clock, so they loop on their own
 setInterval(() => {

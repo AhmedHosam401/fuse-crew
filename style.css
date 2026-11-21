@@ -327,6 +327,8 @@ body.playing { background: var(--bg); }
 .reveal { position: fixed; inset-inline: 0; top: 26%; margin: auto; width: 160px; height: 160px; border-radius: 50%; background: rgba(0, 0, 0, .94); border: 3px solid #e8eaf3; color: #fff;
   display: none; align-items: center; justify-content: center; font-size: 92px; font-weight: 900; z-index: 30; pointer-events: none; direction: ltr; }
 .reveal.on { display: flex; }
+.reveal.time { width: min(260px, 80vw); height: 120px; border-radius: 34px; font-size: 64px; font-variant-numeric: tabular-nums; }
+.timer[data-clock] { cursor: pointer; padding: 10px 16px; margin: -10px -16px; -webkit-touch-callout: none; touch-action: manipulation; }
 
 /* ---------- MUTE: the manual is a book ---------- */
 .book { background: var(--surface); border-radius: 22px; box-shadow: var(--shadow); border: 1px solid color-mix(in srgb, var(--line) 55%, transparent); overflow: hidden; display: flex; flex-direction: column; }
@@ -430,8 +432,8 @@ body.playing { background: var(--bg); }
 .pbtn { height: 46px; min-height: 46px; border-radius: 14px; border: 0; background: var(--surface2); color: var(--text); font-size: 24px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-direction: column; }
 .pbtn small { font-size: 10px; font-weight: 700; color: var(--text2); }
 .pbtn:active { transform: scale(.94); }
-/* the mute needs the signal palette while reading the manual: keep it pinned to the bottom */
-#r-pal:not(:empty) { position: sticky; bottom: 0; z-index: 4; background: var(--bg); padding: 8px 0 4px; box-shadow: 0 -12px 14px -8px var(--bg); }
+#r-dock { display: flex; flex-direction: column; }
+#r-pal:not(:empty) { margin-top: 8px; }
 
 /* ---------- result / dialogs ---------- */
 /* no backdrop-filter: blurring a whole live page is expensive on phones and made the "get ready" sheet show up late */
@@ -464,3 +466,49 @@ body.playing { background: var(--bg); }
   .title { font-size: 48px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- the Mute's screen: locked to the display. The book scrolls inside itself; the signal dock stays under it ---------- */
+body.mute #app { height: 100dvh; min-height: 0; overflow: hidden; gap: 8px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+body.mute .head { position: static; margin: 0; padding: 0; box-shadow: none; gap: 6px; }
+body.mute .timer { font-size: 36px; }
+body.mute .bar { height: 5px; }
+body.mute .rolehead { display: none; }          /* the role tabs (practice) already say who you are; the book is obviously the Mute's */
+body.mute #r-say { display: none; }
+body.mute .spacer { display: none; }
+body.mute .tab { min-height: 40px; }
+body.mute #r-main { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+body.mute .book { flex: 1 1 auto; min-height: 0; }
+body.mute .bk-page { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+body.mute .bk-nav { flex: none; padding: 6px 10px 8px; box-shadow: 0 -10px 12px -9px rgba(0, 0, 0, .45); position: relative; }
+body.mute .bk-nav .btn { flex: 1 1 0; min-width: 0; min-height: 42px; padding: 0 8px; font-size: 14px; white-space: nowrap; }
+body.mute .bk-count { flex: none; white-space: nowrap; }
+body.mute #r-dock { flex: none; padding-top: 2px; }
+body.mute #r-log { flex: none; }
+body.mute .log { max-height: 9dvh; min-height: 44px; padding: 6px 10px; }
+body.mute .bk-tabs { flex: none; }
+@media (max-height: 700px) {
+  body.mute .timer { font-size: 30px; }
+  body.mute .topline .btn.small { min-height: 34px; }
+  body.mute .head .vbtn { min-height: 42px; }
+  body.mute .head .vico { width: 28px; height: 28px; }
+  body.mute #app { padding-top: 8px; gap: 6px; }
+  body.mute .gdock .gstrip { min-height: 50px; }
+  body.mute .pgrid { min-height: 82px; }
+  body.mute .pbtn { height: 38px; min-height: 38px; }
+  body.mute .pgrid.g-colors .pbtn { height: 42px; min-height: 42px; }
+}
+.gdock { display: flex; gap: 8px; align-items: stretch; }
+.gdock .gstrip { flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; min-height: 56px; scrollbar-width: none; padding: 7px 8px; }
+.gdock .gstrip::-webkit-scrollbar { display: none; }
+.gdock .gstrip .empty { padding: 0 6px; font-size: 12px; margin: auto; }
+.gdock .gchip { flex: none; }
+.gdock .gtools { margin: 0; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+.gdock .gtools .iconbtn { width: 38px; height: 26px; border-radius: 9px; }
+body.mute .palette { gap: 6px; }
+body.mute .ptabs { padding: 3px; }
+body.mute .ptab { min-height: 34px; font-size: 13px; }
+body.mute .pgrid { min-height: 90px; align-content: start; gap: 6px; }
+body.mute .pbtn { height: 42px; min-height: 42px; font-size: 22px; border-radius: 12px; }
+.pgrid.g-colors { grid-template-columns: repeat(6, 1fr); }
+.pgrid.g-symbols { grid-template-columns: repeat(4, 1fr); }
+body.mute .pgrid.g-colors .pbtn { height: 48px; min-height: 48px; }

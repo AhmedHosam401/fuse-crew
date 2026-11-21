@@ -109,7 +109,7 @@ export function paletteHTML(tab) {
   }
   return `<div class="palette"><div class="ptabs">${tabs.map((k) =>
     `<button class="ptab${k === tab ? ' on' : ''}" data-act="ptab" data-v="${k}">${t('sig_' + k)}</button>`).join('')}</div>
-    <div class="pgrid">${grid}</div></div>`;
+    <div class="pgrid g-${tab}">${grid}</div></div>`;
 }
 
 // ---------- sounds ----------
