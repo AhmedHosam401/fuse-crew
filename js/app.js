@@ -1059,6 +1059,20 @@ setInterval(() => {
   }
 }, 50);
 
+// the level bars next to the mic / headphones (and in the lobby, next to each player): patched in place, never re-rendered
+setInterval(() => {
+  if (!S.voice || document.hidden || (S.screen !== 'lobby' && S.screen !== 'play')) return;
+  const els = document.querySelectorAll('[data-vu]');
+  if (!els.length) return;
+  const lv = S.voice.levels();
+  els.forEach((el) => {
+    const v = lv[el.dataset.vu] || 0;
+    el.style.setProperty('--lv', v.toFixed(2));
+    el.classList.toggle('hot', v > 0.85);
+  });
+}, 90);
+document.addEventListener('pointerdown', () => { if (S.voice) S.voice.wake(); }, true);
+
 // clock: countdown, timer, timeout — re-render is cheap because regions are diffed
 setInterval(() => { if (S.screen === 'play' && S.room) renderPlay(); }, 250);
 

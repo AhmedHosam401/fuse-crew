@@ -130,7 +130,7 @@ export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite, view, no
     const r = mode === 'pick' ? roleOf(id) : null;
     return `<div class="slot">${avatar(r || 'none', 44)}
       <span class="nm">${esc(p.name)}${r ? `<small style="color:${ROLE_COLOR[r]}">${roleName(r)}</small>` : ''}</span>
-      ${p.voice ? `<span class="vdot" title="voice">${icon('mic', { size: 16 })}</span>` : ''}${id === room.host ? `<span class="badge">${t('host')}</span>` : ''}${id === uid ? `<span class="badge ok">${t('you')}</span>` : ''}
+      ${p.voice ? `<span class="vdot" title="voice">${icon('mic', { size: 16 })}</span>` : ''}${p.voice ? `<span class="vu mini" data-vu="${id === uid ? 'me' : id}" aria-hidden="true"><i></i></span>` : ''}${id === room.host ? `<span class="badge">${t('host')}</span>` : ''}${id === uid ? `<span class="badge ok">${t('you')}</span>` : ''}
       <i class="dot ${p.online === false ? 'off' : ''}"></i></div>`;
   }).join('');
 
@@ -171,7 +171,7 @@ export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite, view, no
     ${picker}
     ${soloLocal ? '' : voiceBarHTML(voice, null, false)}
     ${startBlock}
-    ${soloLocal ? '' : `<p class="muted tip">${t('voiceTip')}</p>`}`;
+    ${soloLocal ? '' : `<p class="muted tip">${t('voiceTip')}</p>${voice && voice.joined ? `<p class="muted tip">${t('vuTip')}</p>` : ''}`}`;
 }
 
 // ---------------------------------------------------------------- play: skeleton + regions
@@ -316,12 +316,14 @@ export function voiceBarHTML(v, role, restricted) {
   if (noHear) ear = { st: 'locked', label: t('earLocked'), off: true };
   else if (v.userDeaf) ear = { st: 'off', label: t('earOff'), off: true };
 
-  const btn = (act, ico, title, s) => `<button class="vbtn ${s.st}" data-act="${act}" aria-pressed="${!s.off}" aria-label="${title}: ${s.label}" ${s.st === 'locked' ? 'aria-disabled="true"' : ''}>
+  // a live mic / headphone gets a thin level bar along its bottom edge (patched by app.js ~11 times a second)
+  const btn = (act, ico, title, s, vu) => `<button class="vbtn ${s.st}" data-act="${act}" aria-pressed="${!s.off}" aria-label="${title}: ${s.label}" ${s.st === 'locked' ? 'aria-disabled="true"' : ''}>
       <span class="vico">${icon(ico, { size: 22, off: s.off && s.st !== 'locked' })}${s.st === 'locked' ? `<span class="vlock">${icon('lock', { size: 12 })}</span>` : ''}</span>
-      <span class="vtxt"><b>${title}</b><small>${s.label}</small></span></button>`;
+      <span class="vtxt"><b>${title}</b><small>${s.label}</small></span>
+      ${s.st === 'on' ? `<span class="vu" data-vu="${vu}" title="${t(vu === 'me' ? 'vuMic' : 'vuEar')}" aria-hidden="true"><i></i></span>` : ''}</button>`;
 
   return `<div class="voicebar">
-    ${btn('micmute', 'mic', t('micTitle'), mic)}${btn('earmute', 'headphones', t('earTitle'), ear)}
+    ${btn('micmute', 'mic', t('micTitle'), mic, 'me')}${btn('earmute', 'headphones', t('earTitle'), ear, 'ear')}
     ${v.total > 0 ? `<span class="vlinks" title="links">${icon('link', { size: 14 })}${v.connected}/${v.total}</span>` : ''}
     ${v.blocked ? `<button class="btn small" data-act="audioplay">${t('voiceTapPlay')}</button>` : ''}</div>`;
 }

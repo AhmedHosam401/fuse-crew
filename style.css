@@ -545,6 +545,15 @@ body.mute .pgrid.g-colors .pbtn { height: 48px; min-height: 48px; }
 .lockico { width: 128px; height: 128px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--accent-text); box-shadow: var(--shadow); }
 .lockscreen .btn { width: min(320px, 100%); }
 
+/* ---------- voice level bars (mic / headphones buttons, lobby players) ---------- */
+.vbtn { position: relative; }
+.vu { position: absolute; inset-inline: 12px; bottom: 4px; height: 4px; border-radius: 3px; overflow: hidden; pointer-events: none;
+  background: color-mix(in srgb, var(--text2) 22%, transparent); }
+.vu i { display: block; height: 100%; width: calc(var(--lv, 0) * 100%); border-radius: 3px; background: var(--good); transition: width .08s linear; }
+.vu.hot i { background: #f59e0b; }
+.vu.mini { position: static; flex: none; width: 34px; height: 6px; }
+@media (prefers-reduced-motion: reduce) { .vu i { transition: none; } }
+
 /* ---------- game view: the 2D scene / the 3D diorama above the controls (the plain interface has none) ---------- */
 #r-scene:empty { display: none; }
 body[data-view="2d"] .rolehead, body[data-view="3d"] .rolehead { display: none; }     /* the scene already says who you are */

@@ -3,6 +3,8 @@
 // The game decides per round who may speak / hear through setRules(); it is enforced on BOTH ends of every link:
 //   speak=false -> the local mic track is disabled (silence is sent)
 //   hear=false  -> every incoming <audio> element is muted
+// levels() reports how loud the mic is and how loud each incoming voice is (the little bars next to the mic / headphone
+// buttons). What it reports is always what the rules allow: a locked mic or silenced headphones read as zero.
 // On top of that the player has two switches of their own (setUserMuted / setUserDeaf); both start ON (mic and audio open).
 import { ICE_SERVERS, TURN_CREDENTIALS_URL, TURN_SERVERS } from '../rtc-config.js';
 
@@ -34,6 +36,42 @@ export function createVoice(net, code, uid, onChange) {
   let joined = false; let micOk = false; let userMuted = false; let userDeaf = false; let blocked = false;
   let rules = { speak: true, hear: true };
   let lastPlayers = {}; let unsub = null; let timer = null; let chain = Promise.resolve();
+
+  // ---- level meters (Web Audio analysers; nothing is played through them)
+  let actx = null;
+  const meters = new Map();           // 'me' | remoteUid -> { src, an, buf, lv }
+  function audioCtx() {
+    if (actx) return actx;
+    const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+    if (!AC) return null;
+    try { actx = new AC(); } catch (e) { actx = null; }
+    return actx;
+  }
+  function dropMeter(key) {
+    const m = meters.get(key); if (!m) return;
+    try { m.src.disconnect(); } catch (e) { /* ignore */ }
+    meters.delete(key);
+  }
+  function addMeter(key, media) {
+    const c = audioCtx(); if (!c || !media) return;
+    dropMeter(key);
+    try {
+      const src = c.createMediaStreamSource(media);
+      const an = c.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.2;
+      src.connect(an);                                    // not connected to the speakers: it only listens
+      meters.set(key, { src, an, buf: new Uint8Array(an.fftSize), lv: 0 });
+    } catch (e) { /* no bar for this one; the voice itself is unaffected */ }
+  }
+  // 0..1, quick to rise and slow to fall; about -55 dB (room noise) = 0 and -15 dB (loud speech) = 1
+  function readLevel(m) {
+    m.an.getByteTimeDomainData(m.buf);
+    let sum = 0;
+    for (let i = 0; i < m.buf.length; i++) { const v = (m.buf[i] - 128) / 128; sum += v * v; }
+    const db = 20 * Math.log10(Math.sqrt(sum / m.buf.length) || 1e-9);
+    const raw = Math.max(0, Math.min(1, (db + 55) / 40));
+    m.lv = raw > m.lv ? raw : m.lv * 0.8 + raw * 0.2;
+    return m.lv < 0.03 ? 0 : m.lv;
+  }
 
   // `speak` / `hear` are what the game's rules allow; `userMuted` / `userDeaf` are the player's own on/off switches.
   // A sense is live only when the game allows it AND the player did not switch it off.
@@ -72,6 +110,7 @@ export function createVoice(net, code, uid, onChange) {
       a.srcObject = e.streams[0] || new MediaStream([e.track]);
       a.muted = !rules.hear || userDeaf;
       peer.audio = a;
+      addMeter(id, a.srcObject);
       a.play().then(() => { if (blocked) { blocked = false; emit(); } }).catch(() => { blocked = true; emit(); });
     };
     pc.onconnectionstatechange = () => {
@@ -91,6 +130,7 @@ export function createVoice(net, code, uid, onChange) {
     peers.delete(id);
     try { p.pc.onconnectionstatechange = null; p.pc.close(); } catch (e) { /* already closed */ }
     if (p.audio) { p.audio.srcObject = null; }
+    dropMeter(id);
     emit();
   }
 
@@ -160,6 +200,7 @@ export function createVoice(net, code, uid, onChange) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         track = stream.getAudioTracks()[0]; micOk = !!track;
+        addMeter('me', stream);
       } catch (e) { micOk = false; stream = null; track = null; }
       await iceP;
       await net.remove(`${base}/${uid}`);
@@ -177,12 +218,34 @@ export function createVoice(net, code, uid, onChange) {
     },
     setUserMuted(v) { userMuted = !!v; applyRules(); },
     setUserDeaf(v) { userDeaf = !!v; applyRules(); },
-    resumeAudio() { peers.forEach((p) => p.audio && p.audio.play().then(() => { blocked = false; emit(); }).catch(() => {})); },
+    resumeAudio() {
+      if (actx && actx.state === 'suspended') actx.resume().catch(() => {});       // browsers keep audio contexts asleep until a tap
+      peers.forEach((p) => p.audio && p.audio.play().then(() => { blocked = false; emit(); }).catch(() => {}));
+    },
+    wake() { if (actx && actx.state === 'suspended') actx.resume().catch(() => {}); },       // called on every tap: a tap is what lets the browser start audio
+    // { me, ear, <uid>: ... } each 0..1. A muted / locked mic and silenced headphones read 0, so the bars never show
+    // something the rules say this player cannot do (the Deaf must not see "somebody is talking").
+    levels() {
+      const out = { me: 0, ear: 0 };
+      if (!joined) return out;
+      if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
+      const me = meters.get('me');
+      if (me) { const l = readLevel(me); out.me = micOk && rules.speak && !userMuted ? l : 0; }
+      const hearing = rules.hear && !userDeaf;
+      for (const [key, m] of meters) {
+        if (key === 'me') continue;
+        const l = hearing ? readLevel(m) : 0;
+        out[key] = l; if (l > out.ear) out.ear = l;
+      }
+      return out;
+    },
     async leave() {
       if (!joined) return;
       joined = false;
       clearInterval(timer); if (unsub) unsub();
       [...peers.keys()].forEach((id) => close(id));
+      [...meters.keys()].forEach(dropMeter);
+      if (actx) { try { actx.close(); } catch (e) { /* ignore */ } actx = null; }
       if (stream) stream.getTracks().forEach((t) => t.stop());
       stream = null; track = null; micOk = false; blocked = false;
       try { await net.remove(`${base}/${uid}`); } catch (e) { /* room may be gone */ }
