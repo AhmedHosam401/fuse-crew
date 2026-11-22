@@ -1,11 +1,14 @@
-// world3d.js — the 3D way to play: you sit at a table in a small workshop, with the bomb in front of you, and the puzzle is made of
-// real objects you look at or touch. Loaded only when somebody picks "3D".
+// world3d.js — the 3D way to play: one small workshop, three people, and the puzzle is made of real objects. Loaded only when somebody
+// picks "3D".
 //
-//   Deaf  — sees the bomb: the sloped panel with the current module built from real parts; the others sit across the table.
-//   Blind — sees NOTHING: a black screen with the module's parts drawn as faint touchable outlines + braille.
-//           A tap does the thing (the wire really snaps), a long press shows the number, the big button reports how long it was held.
-//   Mute  — sits at a desk with the manual: a real book whose page you read and turn; the bomb is under a cloth.
+//   Blind — IS the one sitting in front of the bomb (he cuts the wires and presses the buttons), but in the dark: the bomb is only a
+//           faint outline with the module's parts on it as touchable shapes + braille. A tap does the thing (the wire really snaps),
+//           a long press shows the number, the big button reports how long it was held.
+//   Deaf  — stands behind the Blind and SEES the bomb: the sloped panel with the module built from real, coloured parts. In the
+//           same room the Blind sits at the bomb with his hands on it, and the Mute reads his book on the other side.
+//   Mute  — sits at a desk with the manual: a real open book (leather cover, a thickness of pages, a ribbon) whose page he reads and turns.
 //
+
 // It is only a view of the shared game state (same rules as the interface); nothing here decides anything.
 import * as THREE from '../vendor/three.module.min.js';
 import { CSS3DRenderer, CSS3DObject } from '../vendor/CSS3DRenderer.js';
@@ -13,6 +16,7 @@ import { HOLD_MS } from './engine.js';
 import { fmt } from './ui.js';
 import { moodOf, ROLE_HEX } from './scene.js';
 import { buildSee, buildFeel } from './world-modules.js';
+import { makeBook } from './world-book.js';
 import { makeKit, ledScreen, hazardTex, canvasTex, labelTex } from './world-art.js';
 
 const DARK = 0x111827;
@@ -47,14 +51,24 @@ function stepPool(p, dt) {
   p.geo.attributes.position.needsUpdate = true; p.geo.attributes.color.needsUpdate = true;
 }
 
-// where the camera sits for each role (the fov is worked out from the size of the screen)
-const RIG = {
-  deaf: { pos: new THREE.Vector3(0, 3.0, 4.1), look: new THREE.Vector3(0, 1.12, -0.1), fitW: 3.3 },
-  blind: { pos: new THREE.Vector3(0, 0, 3.7), look: new THREE.Vector3(0, -0.02, 0), fitW: 2.75 },
-  mute: { pos: new THREE.Vector3(0, 9.55, 4.2), look: new THREE.Vector3(0, 0.05, 1.1), fitW: 0 },
-};
-const BOOK_AT = new THREE.Vector3(0, 0.03, 1.25);
+// the bomb: a case with a tall panel hinged on top of it and leaning back
 const BOMB_AT = new THREE.Vector3(0, 0, -0.3);
+const PANEL_W = 2.56; const PANEL_H = 2.16; const LEAN = 0.55;
+const PIVOT = new THREE.Vector3(0, 0.5, 0.6);                                   // the hinge, on the case (bomb coordinates)
+const PC = new THREE.Vector3(0, PIVOT.y + (PANEL_H / 2) * Math.cos(LEAN), PIVOT.z - (PANEL_H / 2) * Math.sin(LEAN));   // middle of the panel
+const NRM = new THREE.Vector3(0, Math.sin(LEAN), Math.cos(LEAN));               // which way the panel faces
+const PANEL_WORLD = BOMB_AT.clone().add(PC);
+const HEADER_Y = 0.86; const MOD_Y = -0.15;                                     // on the panel: the header strip, the middle of the module area
+const SEE_SCALE = 1.12; const FEEL_SCALE = 0.8;
+
+// where the camera sits for each role (the fov is worked out from the size of the screen; the Mute's is worked out in fit())
+const RIG = {
+  deaf: { pos: new THREE.Vector3(0.1, 3.1, 4.9), look: new THREE.Vector3(0, 1.15, -0.2), fitW: 3.75 },
+  blind: { pos: PANEL_WORLD.clone().addScaledVector(NRM, 3.9), look: PANEL_WORLD.clone(), fitW: 2.72 },
+  mute: { pos: new THREE.Vector3(0, 9, 8), look: new THREE.Vector3(0, 0.5, 1), fitW: 0 },      // (the Mute's is worked out in fit())
+};
+const BOOK_Z = 0.8; const BOOK_TILT = 0.5;                                      // the Mute's book: where it lies, how far it leans back
+const MUTE_FOV = 22; const MUTE_DIST = 9.5; const MUTE_ELEV = 0.55; const MUTE_FILL = 0.78; const MUTE_SHIFT = 0.04;   // how the Mute looks at it
 
 export function createWorld(host, opts) {
   const { onAction = () => {}, onReveal = () => {}, onBuzz = () => {} } = opts;
@@ -87,8 +101,8 @@ export function createWorld(host, opts) {
     for (let i = 0; i < 26; i++) { g.fillStyle = i % 2 ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.06)'; g.fillRect(0, i * 10 + (i * 7) % 5, w, 3 + (i % 3)); }
   }));
   wood.wrapS = wood.wrapT = THREE.RepeatWrapping; wood.repeat.set(3, 2);
-  add(room, new THREE.BoxGeometry(7.4, 0.3, 4.8), std(0xffffff, { map: wood, roughness: 0.8 }), 0, -0.15, 0);
-  add(room, new THREE.BoxGeometry(7.6, 0.06, 5.0), std(0x2a1f18, { roughness: 0.9 }), 0, -0.32, 0);
+  add(room, new THREE.BoxGeometry(7.4, 0.3, 6.6), std(0xffffff, { map: wood, roughness: 0.8 }), 0, -0.15, 0.8);
+  add(room, new THREE.BoxGeometry(7.6, 0.06, 6.8), std(0x2a1f18, { roughness: 0.9 }), 0, -0.32, 0.8);
   const wall = add(room, new THREE.PlaneGeometry(16, 7), std(0x1a1e33, { roughness: 1 }), 0, 2.2, -4.6);
   // shelves + crates on the back wall, to give the room some depth
   [[-3.6, 0.6, -4.2, 1.1, 1.2], [-2.2, 0.35, -4.3, 0.8, 0.7], [3.4, 0.55, -4.2, 1.2, 1.1], [2.0, 0.3, -4.3, 0.7, 0.6]].forEach(([x, y, z, w, h], i) => {
@@ -104,30 +118,31 @@ export function createWorld(host, opts) {
   add(lampG, new THREE.ConeGeometry(0.34, 0.36, 24, 1, true), std(0xfacc6b, { side: THREE.DoubleSide, emissive: 0x7a5a10, emissiveIntensity: 0.5 }), 0, 1.6, 0.05);
   add(lampG, new THREE.SphereGeometry(0.11, 12, 8), kit.basic(0xfff0b0), 0, 1.5, 0.05);
 
-  // ================================================================= the bomb (a case with a sloped panel)
+  // ================================================================= the bomb (a case with a tall panel hinged on top of it)
   const bomb = new THREE.Group(); bomb.position.copy(BOMB_AT); scene.add(bomb);
   const steel = std(0x2b3046, { metalness: 0.6, roughness: 0.4 });
   add(bomb, new THREE.BoxGeometry(2.8, 0.5, 2.1), steel, 0, 0.25, 0);
-  [-1.2, 1.2].forEach((x) => { const st = add(bomb, new THREE.BoxGeometry(0.12, 1.5, 0.12), steel, x, 1.2, -0.52); st.rotation.x = 0.5; });
   const hz = kit.tex(hazardTex());
   add(bomb, new THREE.PlaneGeometry(2.8, 0.1), kit.basic(0xffffff, { map: hz }), 0, 0.2, 1.055);
   [-1.45, 1.45].forEach((x) => { const h = add(bomb, new THREE.TorusGeometry(0.2, 0.035, 8, 20, Math.PI), std(0x7a82a3, { metalness: 0.7 }), x, 0.42, 0.1); h.rotation.set(0, Math.PI / 2, 0); });
-  const rig = new THREE.Group(); rig.position.set(0, 1.21, 0.16); rig.rotation.x = -0.55; bomb.add(rig);
-  add(rig, new THREE.BoxGeometry(2.56, 1.68, 0.06), std(0x4b5167, { metalness: 0.7, roughness: 0.35 }), 0, 0, -0.01);
-  add(rig, new THREE.BoxGeometry(2.4, 1.52, 0.06), std(0x12151f, { roughness: 0.8 }), 0, 0, 0.02);
-  [[-1.18, 0.74], [1.18, 0.74], [-1.18, -0.74], [1.18, -0.74]].forEach(([x, y]) => add(rig, new THREE.CylinderGeometry(0.05, 0.05, 0.03, 10), std(0x8a90a6, { metalness: 0.8 }), x, y, 0.055).rotation.x = Math.PI / 2);
+  [-0.9, 0.9].forEach((x) => add(bomb, new THREE.CylinderGeometry(0.16, 0.16, 0.12, 14), std(0x7a82a3, { metalness: 0.8 }), x, 0.56, PIVOT.z).rotation.z = Math.PI / 2);   // the hinge
+  const rig = new THREE.Group(); rig.position.copy(PC); rig.rotation.x = -LEAN; bomb.add(rig);
+  add(rig, new THREE.BoxGeometry(PANEL_W, PANEL_H, 0.06), std(0x4b5167, { metalness: 0.7, roughness: 0.35 }), 0, 0, -0.01);
+  add(rig, new THREE.BoxGeometry(PANEL_W - 0.16, PANEL_H - 0.16, 0.06), std(0x12151f, { roughness: 0.8 }), 0, 0, 0.02);
+  [-1, 1].forEach((sx) => [-1, 1].forEach((sy) => add(rig, new THREE.CylinderGeometry(0.05, 0.05, 0.03, 10), std(0x8a90a6, { metalness: 0.8 }), sx * (PANEL_W / 2 - 0.1), sy * (PANEL_H / 2 - 0.1), 0.055).rotation.x = Math.PI / 2));
+  [-1.2, 1.2].forEach((x) => add(rig, new THREE.BoxGeometry(0.1, PANEL_H * 0.9, 0.1), steel, x, -0.1, -0.13));   // the bars behind the panel
   // header: strike lamps, the time, which module
   const strikeLamps = [-0.95, -0.77, -0.59].map((x) => {
-    const m = std(0x3a1a1f, { emissive: 0x000000 }); add(rig, new THREE.SphereGeometry(0.065, 12, 8), m, x, 0.66, 0.08); return m;
+    const m = std(0x3a1a1f, { emissive: 0x000000 }); add(rig, new THREE.SphereGeometry(0.065, 12, 8), m, x, HEADER_Y, 0.08); return m;
   });
   const led = ledScreen(); kit.tex(led.tex);
-  const ledPlane = add(rig, new THREE.PlaneGeometry(0.84, 0.23), kit.basic(0xffffff, { map: led.tex }), 0.06, 0.66, 0.065);
-  const cntMat = kit.basic(0xffffff, { transparent: true }); const cntPlane = add(rig, new THREE.PlaneGeometry(0.42, 0.2), cntMat, 0.92, 0.66, 0.065);
+  add(rig, new THREE.PlaneGeometry(0.84, 0.23), kit.basic(0xffffff, { map: led.tex }), 0.06, HEADER_Y, 0.065);
+  const cntMat = kit.basic(0xffffff, { transparent: true }); add(rig, new THREE.PlaneGeometry(0.42, 0.2), cntMat, 0.92, HEADER_Y, 0.065);
   let cntKey = '';
-  const modRoot = new THREE.Group(); modRoot.position.set(0, -0.1, 0.05); rig.add(modRoot);
-  const fogVeil = add(rig, new THREE.PlaneGeometry(2.4, 1.22), kit.basic(0x12151f, { transparent: true, opacity: 0, depthWrite: false }), 0, -0.1, 0.62);
+  const modRoot = new THREE.Group(); modRoot.position.set(0, MOD_Y, 0.05); rig.add(modRoot);
+  const fogVeil = add(rig, new THREE.PlaneGeometry(2.4, 1.74), kit.basic(0x12151f, { transparent: true, opacity: 0, depthWrite: false }), 0, MOD_Y, 0.62);
   // the fuse (it burns down as time runs out)
-  const fuseCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(1.15, 0.5, -0.8), new THREE.Vector3(1.2, 1.2, -0.85), new THREE.Vector3(1.45, 1.8, -0.8), new THREE.Vector3(1.2, 2.35, -0.75), new THREE.Vector3(0.85, 2.3, -0.7)]);
+  const fuseCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(1.15, 0.5, -0.8), new THREE.Vector3(1.2, 1.4, -0.95), new THREE.Vector3(1.5, 2.2, -0.9), new THREE.Vector3(1.25, 2.85, -0.85), new THREE.Vector3(0.85, 2.8, -0.8)]);
   const SEG = 44;
   const fuseGeo = kit.geo(new THREE.TubeGeometry(fuseCurve, SEG, 0.04, 6, false)); const perSeg = fuseGeo.index.count / SEG;
   const fuse = new THREE.Mesh(fuseGeo, std(0xd9b46a, { roughness: 0.8 })); bomb.add(fuse);
@@ -136,9 +151,28 @@ export function createWorld(host, opts) {
   spark.add(new THREE.Mesh(kit.geo(new THREE.SphereGeometry(0.2, 12, 8)), kit.basic(0xfb923c, { transparent: true, opacity: 0.35, depthWrite: false })));
   const sparkLight = new THREE.PointLight(0xff9a3c, 7, 7, 1.8); spark.add(sparkLight);
   let fuseF = -1;
-  // the cloth the Mute's bomb is hidden under
-  const cloth = add(scene, new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), std(0x3a3f55, { roughness: 1, flatShading: true }), BOMB_AT.x, 0, BOMB_AT.z);
-  cloth.scale.set(1.75, 1.05, 1.5); const clothBase = cloth.scale.clone();
+
+  // ---- the same bomb as the Blind knows it: only its edges, in the dark
+  const feel = new THREE.Group(); feel.position.copy(BOMB_AT); scene.add(feel);
+  const lineM = kit.basic(0x5a6390, { transparent: true, opacity: 0.8, depthWrite: false });
+  const dimM = kit.basic(0x2c3354, { transparent: true, opacity: 0.7, depthWrite: false });
+  const thin = (parent, w, h, d, mat, x, y, z) => add(parent, new THREE.BoxGeometry(w, h, d), mat, x, y, z);
+  const outlineBox = (parent, w, h, d, th, mat, x, y, z) => {
+    [-1, 1].forEach((a) => (d > 0.01 ? [-1, 1] : [1]).forEach((b) => {
+      thin(parent, w, th, th, mat, x, y + a * h / 2, z + b * d / 2); thin(parent, th, h, th, mat, x + a * w / 2, y, z + b * d / 2); if (d > 0.01) thin(parent, th, th, d, mat, x + a * w / 2, y + b * h / 2, z);
+    }));
+  };
+  outlineBox(feel, 2.8, 0.5, 2.1, 0.028, lineM, 0, 0.25, 0);
+  [-0.9, 0.9].forEach((x) => thin(feel, 0.1, 0.1, 0.1, dimM, x, 0.55, PIVOT.z));
+  const feelRig = new THREE.Group(); feelRig.position.copy(PC); feelRig.rotation.x = -LEAN; feel.add(feelRig);
+  const plate = add(feelRig, new THREE.PlaneGeometry(PANEL_W - 0.16, PANEL_H - 0.16), kit.basic(0x0b0e1c, { transparent: true, opacity: 0.88 }), 0, 0, 0.005); plate.renderOrder = -1;   // it hides the far edges of the case behind it
+  outlineBox(feelRig, PANEL_W, PANEL_H, 0.04, 0.03, lineM, 0, 0, 0);
+  outlineBox(feelRig, PANEL_W - 0.16, PANEL_H - 0.16, 0.0, 0.014, dimM, 0, 0, 0.03);
+  [-1, 1].forEach((sx) => [-1, 1].forEach((sy) => add(feelRig, new THREE.RingGeometry(0.03, 0.055, 14), lineM, sx * (PANEL_W / 2 - 0.1), sy * (PANEL_H / 2 - 0.1), 0.03)));
+  [-0.95, -0.77, -0.59].forEach((x) => add(feelRig, new THREE.RingGeometry(0.05, 0.07, 18), dimM, x, HEADER_Y, 0.03));
+  outlineBox(feelRig, 0.84, 0.23, 0.0, 0.012, dimM, 0.06, HEADER_Y, 0.03);
+  outlineBox(feelRig, 0.42, 0.2, 0.0, 0.012, dimM, 0.92, HEADER_Y, 0.03);
+  const feelRoot = new THREE.Group(); feelRoot.position.set(0, MOD_Y, 0.05); feelRig.add(feelRoot);
 
   // ================================================================= the crew
   const chars = {};
@@ -177,24 +211,61 @@ export function createWorld(host, opts) {
       add(inner, new THREE.TorusGeometry(0.75, 0.05, 8, 32, Math.PI), band, 0, 0.74, 0);
       [-1, 1].forEach((sx) => { add(inner, new THREE.CylinderGeometry(0.21, 0.21, 0.15, 18), band, sx * 0.73, 0.74, 0).rotation.z = Math.PI / 2; });
     }
+    // arms: the Blind reaches for the bomb, the Mute holds his book, the Deaf keeps his hands down
+    const limb = (a, b, rad) => {
+      const d = b.clone().sub(a); const len = d.length();
+      const m = add(inner, new THREE.CylinderGeometry(rad, rad, len, 10), bm, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+      add(inner, new THREE.SphereGeometry(rad * 1.45, 12, 10), bm, b.x, b.y, b.z);
+    };
+    const reach = { blind: [0.36, 1.3, 2.0], mute: [0.4, 0.5, 0.95], deaf: [0.7, 0.3, 0.2] }[r];
+    [-1, 1].forEach((sx) => limb(new THREE.Vector3(sx * 0.62, 0.5, 0.15), new THREE.Vector3(sx * reach[0], reach[1], reach[2]), 0.085));
     add(inner, new THREE.CylinderGeometry(0.03, 0.03, 0.26, 6), std(0xa16207), 0.1, 1.44, 0).rotation.z = -0.5;
     add(inner, new THREE.SphereGeometry(0.07, 8, 6), kit.basic(0xfde047), 0.2, 1.54, 0);
     chars[r] = { g, inner, bm, color, eyes, mouths, phase: Math.random() * 6, side: 0 };
   }
   ['blind', 'deaf', 'mute'].forEach(makeChar);
 
-  // ================================================================= the Mute's book
-  const bookG = new THREE.Group(); bookG.position.copy(BOOK_AT); scene.add(bookG);
-  const cover = add(bookG, new THREE.BoxGeometry(1, 0.1, 1), std(0x6b3a2a, { roughness: 0.7 }));
-  const pages = add(bookG, new THREE.BoxGeometry(1, 0.07, 1), std(0xf0e8d2, { roughness: 0.9 }), 0, 0.04, 0);
+  // ================================================================= the books
+  // (a) the Mute's own: lies on his desk, leaning back on a stand; the manual (HTML) is laid exactly on its right-hand page
+  const bookRoot = new THREE.Group(); scene.add(bookRoot);
+  const bookTilt = new THREE.Group(); bookTilt.rotation.x = BOOK_TILT; bookRoot.add(bookTilt);
+  let bookKit = null;
   const bookEl = document.createElement('div'); bookEl.className = 'bk3d';
   let css = null; let cssObj = null; let cssCam = null; let K = 100; let pageW = 300; let pageH = 300;
   function ensureCss() {
     if (css) return;
     css = new CSS3DRenderer(); css.domElement.className = 'w3css'; css.domElement.style.pointerEvents = 'none'; host.appendChild(css.domElement);
-    cssObj = new CSS3DObject(bookEl); cssObj.rotation.x = -Math.PI / 2;
+    cssObj = new CSS3DObject(bookEl);
     const cssScene = new THREE.Scene(); cssScene.add(cssObj); css.scene = cssScene;
     cssCam = new THREE.PerspectiveCamera(40, 1, 1, 100000);
+  }
+  // rest a tilted book (its near edge) on the desk: how high its centre has to be
+  const restY = (b, H) => (b.T + b.C) * Math.cos(BOOK_TILT) + (H / 2 + b.over) * Math.sin(BOOK_TILT);
+  let bookW = 0; let bookH = 0;
+  function rebuildBook(W, H) {
+    if (Math.abs(W - bookW) < 0.004 && Math.abs(H - bookH) < 0.004) return;
+    bookW = W; bookH = H;
+    bookRoot.remove(...bookRoot.children.filter((c) => c !== bookTilt)); bookTilt.remove(...bookTilt.children);
+    if (bookKit) bookKit.dispose();
+    bookKit = makeKit(); const b = makeBook(W, H, bookKit); bookTilt.add(b.group);
+    const cy = restY(b, H); bookRoot.position.set(0, cy, BOOK_Z);
+    // a wooden wedge under the back of the book, so it really leans on something
+    const c = Math.cos(BOOK_TILT); const sn = Math.sin(BOOK_TILT); const hh = H / 2 + b.over; const lo = b.T + b.C;
+    const zn = -lo * sn + hh * c; const zf = -lo * sn - hh * c; const hF = 2 * hh * sn - 0.02;
+    const shape = new THREE.Shape(); shape.moveTo(zn, 0); shape.lineTo(zf, 0); shape.lineTo(zf, hF); shape.closePath();
+    const depth = (2 * W + 2 * b.over) * 0.7;
+    const geo = bookKit.geo(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false })); geo.translate(0, 0, -depth / 2);
+    const wedge = new THREE.Mesh(geo, bookKit.std(0x4a3526, { roughness: 0.85 }));
+    wedge.rotation.y = -Math.PI / 2; wedge.position.set(-(W + b.gap) / 2, -cy, 0); bookRoot.add(wedge);
+  }
+  // (b) the small one the Mute holds up on the other side of the room (the Deaf sees its cover, and him behind it)
+  const miniKit = makeKit(); const miniRoot = new THREE.Group(); scene.add(miniRoot);
+  {
+    const MT = 0.95; const mb = makeBook(0.62, 0.5, miniKit, { text: true });
+    const tilt = new THREE.Group(); tilt.rotation.x = MT; tilt.add(mb.group); miniRoot.add(tilt);
+    miniRoot.rotation.y = Math.PI;                                           // its pages face the Mute, we see the back
+    miniRoot.position.set(1.8, (mb.T + mb.C) * Math.cos(MT) + (0.25 + mb.over) * Math.sin(MT) + 0.05, -0.7);
   }
 
   // ================================================================= effects
@@ -247,22 +318,23 @@ export function createWorld(host, opts) {
     const feel = role === 'blind';
     if (!m.mod) return;
     const b = feel ? buildFeel(m.mod, m.game) : buildSee(m.mod);
-    (feel ? scene : modRoot).add(b.group);
-    cur.b = b; cur.born = performance.now(); hits = b.hits;
+    (feel ? feelRoot : modRoot).add(b.group);
+    cur.b = b; cur.base = feel ? FEEL_SCALE : SEE_SCALE; cur.born = performance.now(); hits = b.hits;
   }
 
   // ---- role: what is visible, the light, the camera
   function applyRole(first) {
     const blind = role === 'blind'; const mute = role === 'mute'; const deaf = role === 'deaf';
-    room.visible = !blind; bomb.visible = deaf; cloth.visible = mute; bookG.visible = mute;
-    cloth.scale.copy(clothBase).multiplyScalar(mute ? 0.4 : 1); cloth.position.z = mute ? -0.7 : BOMB_AT.z;
+    room.visible = !blind; bomb.visible = deaf; feel.visible = blind;
+    bookRoot.visible = mute; miniRoot.visible = deaf;
     scene.background.setHex(BG[role]); scene.fog.color.setHex(BG[role]);
     hemi.visible = key.visible = lampLight.visible = !blind;
     Object.values(chars).forEach((c) => { c.g.visible = false; });
-    const slots = deaf ? [['blind', -2.05], ['mute', 2.05]] : mute ? [['blind', -1.3], ['deaf', 1.3]] : [];
-    slots.forEach(([r, x]) => {
-      const c = chars[r]; c.g.visible = true; c.g.position.set(x, 0, deaf ? -1.1 : -0.7); c.g.rotation.y = x < 0 ? 0.55 : -0.55; c.g.scale.setScalar(deaf ? 0.8 : 0.42);
-    });
+    // Deaf's world: the Blind sits at the bomb (back to us, hands on it); the Mute reads his book behind it, on the right
+    // Mute's world: the other two are small, behind his desk
+    const put = (r, x, y, z, ry, sc) => { const c = chars[r]; c.g.visible = true; c.g.position.set(x, y, z); c.g.rotation.y = ry; c.g.scale.setScalar(sc); };
+    if (deaf) { put('blind', -0.55, 0, 1.55, Math.PI, 0.72); put('mute', 1.8, 0, -1.4, 0, 0.8); }
+    if (mute) { put('blind', -1.7, 0, -2.0, 0.35, 0.55); put('deaf', 1.7, 0, -2.0, -0.35, 0.55); }
     ensureCssIfNeeded();
     if (css) css.domElement.style.display = mute ? '' : 'none';
     canvas.style.touchAction = blind ? 'none' : 'pan-y';
@@ -276,19 +348,30 @@ export function createWorld(host, opts) {
     size = { w: host.clientWidth || 300, h: host.clientHeight || 300 };
     renderer.setSize(size.w, size.h, false);
     camera.aspect = size.w / size.h;
-    const rig = RIG[role]; const dist = rig.pos.distanceTo(rig.look);
-    camera.fov = role === 'mute' ? 20 : Math.min(72, Math.max(30, (2 * Math.atan(rig.fitW / 2 / camera.aspect / dist) * 180) / Math.PI));
-    camera.updateProjectionMatrix();
-    if (role === 'mute' && css) {
-      css.setSize(size.w, size.h);
-      // 1 CSS pixel of the page = 1 screen pixel when the page faces the camera: so the manual is as readable as in the interface
-      const p = size.h / 2 / Math.tan((camera.fov * Math.PI) / 360);
-      const axis = RIG.mute.look.clone().sub(RIG.mute.pos).normalize();
-      const d = BOOK_AT.clone().sub(RIG.mute.pos).dot(axis); K = p / d;
-      pageW = Math.round(size.w * 0.92); pageH = Math.round(size.h * (size.h < 330 ? 0.94 : 0.84));
-      bookEl.style.width = `${pageW}px`; bookEl.style.height = `${pageH}px`;
-      cssObj.position.set(BOOK_AT.x * K, (BOOK_AT.y + 0.07) * K, BOOK_AT.z * K);
-      cover.scale.set((pageW / K) * 1.04, 1, (pageH / K) * 1.05); pages.scale.set((pageW / K) * 1.0, 1, (pageH / K) * 1.0);
+    const rig = RIG[role];
+    if (role === 'mute') {
+      // The manual is a real page of the 3D scene: 1 CSS pixel = K * 1 world unit at the page, and the book is built to the page's size,
+      // so the page fills about 0.86 of the width and 0.78 of the height of the screen (foreshortened by the angle we look at it from).
+      camera.fov = MUTE_FOV; camera.updateProjectionMatrix();
+      const p = size.h / 2 / Math.tan((MUTE_FOV * Math.PI) / 360); K = p / MUTE_DIST;
+      const view = Math.PI / 2 - BOOK_TILT - MUTE_ELEV;                       // the angle between the way we look and the page's normal
+      pageW = Math.round(Math.min(size.w * 0.86, 680)); const tiny = size.h < 330;                                                  // a small phone: the page takes nearly all of it, so it can still be read
+      pageH = Math.round((size.h * (tiny ? 0.92 : MUTE_FILL)) / Math.cos(view));
+      rebuildBook(pageW / K, pageH / K);
+      const S = bookRoot.position.clone();                                      // the middle of the right-hand page
+      const up = new THREE.Vector3(0, Math.cos(MUTE_ELEV), -Math.sin(MUTE_ELEV));
+      const look = S.clone().addScaledVector(up, -(size.h * (tiny ? 0.02 : MUTE_SHIFT)) / K);   // so the page sits a little above the middle of the screen
+      rig.look.copy(look); rig.pos.copy(look).add(new THREE.Vector3(0, Math.sin(MUTE_ELEV), Math.cos(MUTE_ELEV)).multiplyScalar(MUTE_DIST));
+      if (css) {
+        css.setSize(size.w, size.h);
+        bookEl.style.width = `${pageW}px`; bookEl.style.height = `${pageH}px`;
+        cssObj.quaternion.setFromEuler(new THREE.Euler(BOOK_TILT - Math.PI / 2, 0, 0));
+        cssObj.position.set(S.x * K, S.y * K + 0.4, S.z * K);
+      }
+    } else {
+      const dist = rig.pos.distanceTo(rig.look);
+      camera.fov = Math.min(72, Math.max(30, (2 * Math.atan(rig.fitW / 2 / camera.aspect / dist) * 180) / Math.PI));
+      camera.updateProjectionMatrix();
     }
   }
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
@@ -364,7 +447,7 @@ export function createWorld(host, opts) {
     if (cur.b) {
       cur.b.tick(now);
       const k = ease((performance.now() - cur.born) / 350);
-      cur.b.group.position.z = blind ? 0 : 0; cur.b.group.scale.setScalar(0.85 + 0.15 * k);
+      cur.b.group.scale.setScalar(cur.base * (0.85 + 0.15 * k));
     }
     // the fog levels: the bomb vanishes for a while every ten seconds
     if (deaf) {
@@ -391,7 +474,6 @@ export function createWorld(host, opts) {
       bomb.visible = !lost;
       bomb.rotation.z = mood === 'hit' ? Math.sin(t * 50) * 0.02 * Math.exp(-since * 5) : 0;
     } else { sparkLight.intensity = 0; }
-    if (role === 'mute') { cloth.visible = !lost; }
 
     // the crew
     Object.values(chars).forEach((c) => {
@@ -470,12 +552,12 @@ export function createWorld(host, opts) {
       model = m; at = Date.now();
       if (m.role !== role) { role = m.role; applyRole(); }
     },
-    stats: () => ({ frames, mood, role, hits: hits.length, mode: cur.b ? 'module' : 'none', veil: +fogVeil.material.opacity.toFixed(2), book: !!(css && role === 'mute') }),
+    stats: () => ({ crew: Object.fromEntries(Object.entries(chars).filter(([, c]) => c.g.visible).map(([r, c]) => [r, [+c.g.position.x.toFixed(2), +c.g.position.z.toFixed(2)]])), bombZ: BOMB_AT.z, cam: [camera.position.x, camera.position.y, camera.position.z].map((v) => +v.toFixed(2)), fov: +camera.fov.toFixed(1), orbit: [+orbit.yaw.toFixed(3), +orbit.pitch.toFixed(3)], frames, mood, role, hits: hits.length, mode: cur.b ? 'module' : 'none', veil: +fogVeil.material.opacity.toFixed(2), book: !!(css && role === 'mute') }),
     screenOf,
     // where the book is on the screen: from the 3D scene (cover mesh) and from the page element (the tests compare them)
     bookRects() {
       const r = canvas.getBoundingClientRect(); const b = bookEl.getBoundingClientRect();
-      const c = BOOK_AT.clone().project(camera);
+      const c = bookRoot.position.clone().project(camera);
       return { scene: { x: r.left + ((c.x + 1) / 2) * r.width, y: r.top + ((1 - c.y) / 2) * r.height }, page: { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width, h: b.height }, host: { l: r.left, t: r.top, w: r.width, h: r.height }, K, pageW, pageH };
     },
     destroy() {

@@ -579,8 +579,19 @@ body.mute .w3host { flex: 1 1 0; min-height: 0; height: auto; }
 }
 body.mute .sc-tag { top: 5px; font-size: 12px; }
 .sc-tag svg { flex: none; }
-/* the Mute's manual lying on his desk (a real page of the 3D scene, so it is laid out at a fixed pixel size by world3d.js) */
+/* the Mute's manual lying on his desk (a real page of the 3D scene, so it is laid out at a fixed pixel size by world3d.js).
+   It is a PAPER page: warm white with dark ink, whatever the theme, so it reads as the page of a printed book. */
 html[dir="rtl"] .bk3d { direction: rtl; }
-.bk3d { display: flex; flex-direction: column; text-align: start; border-radius: 14px; overflow: hidden; -webkit-user-select: none; user-select: none; }
-.bk3d .book { flex: 1 1 auto; min-height: 0; box-shadow: none; border-radius: 14px; }
+.bk3d {
+  --surface: #f4ecd6; --surface2: #eadfc2; --text: #2b2418; --text2: #6a5d44; --line: #cdbf9c;
+  position: relative; display: flex; flex-direction: column; text-align: start; border-radius: 3px; overflow: hidden; color: var(--text);
+  background: var(--surface); -webkit-user-select: none; user-select: none;
+}
+.bk3d::after {                                    /* the shadow of the gutter on the page */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(to right, rgba(60, 40, 15, .38), rgba(60, 40, 15, .12) 7%, transparent 16%);
+}
+.bk3d .book { flex: 1 1 auto; min-height: 0; box-shadow: none; border: 0; border-radius: 0; background: transparent; }
+.bk3d .bk-tabs { background: rgba(120, 90, 40, .10); }
+.bk3d .bk-tab.on { background: var(--surface); }
 .bk3d .bk-page { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
