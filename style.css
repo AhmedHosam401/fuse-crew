@@ -559,57 +559,28 @@ body.mute .pgrid.g-colors .pbtn { height: 48px; min-height: 48px; }
 .vu.mini { position: static; flex: none; width: 34px; height: 6px; }
 @media (prefers-reduced-motion: reduce) { .vu i { transition: none; } }
 
-/* ---------- game view: the 2D scene / the 3D diorama above the controls (the plain interface has none) ---------- */
-#r-scene:empty { display: none; }
-body[data-view="2d"] .rolehead, body[data-view="3d"] .rolehead { display: none; }     /* the scene already says who you are */
+/* ---------- game view: the 3D world (js/world3d.js). The plain interface has none of this ---------- */
+body[data-view="3d"] .rolehead { display: none; }      /* the world already says who you are (the little tag in its corner) */
 .viewbtn { gap: 6px; padding: 0 12px; }
-.scene {
-  position: relative; border-radius: var(--r); overflow: hidden; background: #171a2a; box-shadow: var(--shadow);
-  border: 1.5px solid color-mix(in srgb, var(--c) 45%, transparent); height: clamp(112px, 25dvh, 176px);
+.w3host {
+  position: relative; width: 100%; border-radius: var(--r); overflow: hidden; background: #151829; box-shadow: var(--shadow);
+  border: 1.5px solid color-mix(in srgb, var(--c, #6d7592) 35%, transparent); height: clamp(320px, 56dvh, 560px);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
-.scene svg.sc, .scene canvas.sc3d { display: block; width: 100%; height: 100%; }
-body.mute .scene { height: clamp(66px, 11dvh, 104px); }
-body.mute .sc-tag { top: 5px; font-size: 12px; }
+[data-sense="blind"] .w3host { background: #000; height: clamp(360px, 64dvh, 680px); border-color: #151822; box-shadow: none; }
+body.mute .w3host { flex: 1 1 0; min-height: 0; height: auto; }
+.w3canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+.w3css { position: absolute; inset: 0; direction: ltr; }     /* the 3D layer is positioned in px from the left: an RTL page would shift it */
+.w3load { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text2); font-weight: 700; }
 .sc-tag {
-  position: absolute; inset-inline-start: 8px; top: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 4px;
+  position: absolute; z-index: 3; inset-inline-start: 8px; top: 8px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 4px;
   border-radius: 99px; background: rgba(10, 12, 20, .72); color: var(--c); font-weight: 800; font-size: 13px;
   border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); backdrop-filter: blur(4px); pointer-events: none;
 }
+body.mute .sc-tag { top: 5px; font-size: 12px; }
 .sc-tag svg { flex: none; }
-.sc.dark { filter: brightness(.4) saturate(.7); }
-.sc-char { transform-box: fill-box; transform-origin: 50% 100%; }
-.sc-bomb { transform-box: fill-box; transform-origin: 50% 50%; }
-.m-calm .sc-char { animation: sc-bob 2.6s ease-in-out infinite; }
-.m-calm .sc-deaf { animation-delay: -.9s; }
-.m-calm .sc-mute { animation-delay: -1.7s; }
-@keyframes sc-bob { 50% { transform: translateY(-3px); } }
-.m-tense .sc-char { animation: sc-shiver .16s linear infinite; }
-@keyframes sc-shiver { 0%, 100% { transform: translateX(-1.4px); } 50% { transform: translateX(1.4px); } }
-.m-tense .sc-bomb { animation: sc-throb .5s ease-in-out infinite; }
-@keyframes sc-throb { 50% { transform: scale(1.035); } }
-.m-hit .sc-char { animation: sc-recoil .9s ease-out both; }
-@keyframes sc-recoil { 0% { transform: scale(1.14, .8); } 25% { transform: translateY(-7px) scale(.94, 1.1); } 100% { transform: none; } }
-.m-hit .sc-bomb { animation: sc-shake .45s linear both; }
-@keyframes sc-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-4px) rotate(-3deg); } 40% { transform: translateX(4px) rotate(3deg); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); } }
-.m-cheer .sc-char, .m-win .sc-char { animation: sc-jump .55s ease-in-out infinite; }
-.m-cheer .sc-deaf, .m-win .sc-deaf { animation-delay: -.18s; }
-.m-cheer .sc-mute, .m-win .sc-mute { animation-delay: -.36s; }
-@keyframes sc-jump { 50% { transform: translateY(-11px); } }
-.m-lose .sc-char { animation: sc-slump .6s ease-out both; }
-@keyframes sc-slump { from { transform: translateY(-6px) scale(1.05); } to { transform: translateY(2px) scale(1, .92); } }
-.sc-flash { opacity: 0; pointer-events: none; }
-.m-hit .sc-flash { animation: sc-flash .7s ease-out; }
-@keyframes sc-flash { from { opacity: .5; } to { opacity: 0; } }
-#sc-spark circle:first-child { animation: sc-glow .22s ease-in-out infinite alternate; }
-@keyframes sc-glow { from { opacity: .15; } to { opacity: .6; } }
-.sc-ring { animation: sc-ring 1.4s ease-in-out infinite; }
-@keyframes sc-ring { 50% { opacity: .22; } }
-.sc-conf { transform-box: fill-box; animation: sc-fall 2.3s linear infinite; }
-@keyframes sc-fall { from { transform: translate(0, 0) rotate(0); } to { transform: translate(var(--dx, 0), 176px) rotate(540deg); } }
-.sc-boom polygon { transform-box: fill-box; transform-origin: center; animation: sc-bang .7s ease-out both; }
-@keyframes sc-bang { 0% { transform: scale(.05); opacity: 1; } 55% { transform: scale(1.15); } 100% { transform: scale(1); opacity: .92; } }
-.sc-smoke circle { transform-box: fill-box; transform-origin: center; animation: sc-rise 3.2s ease-out infinite; }
-.sc-smoke circle:nth-child(2) { animation-delay: -1s; }
-.sc-smoke circle:nth-child(3) { animation-delay: -2s; }
-@keyframes sc-rise { from { transform: translateY(8px) scale(.6); opacity: .55; } to { transform: translateY(-26px) scale(1.5); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .sc *, .sc { animation: none !important; } }
+/* the Mute's manual lying on his desk (a real page of the 3D scene, so it is laid out at a fixed pixel size by world3d.js) */
+html[dir="rtl"] .bk3d { direction: rtl; }
+.bk3d { display: flex; flex-direction: column; text-align: start; border-radius: 14px; overflow: hidden; -webkit-user-select: none; user-select: none; }
+.bk3d .book { flex: 1 1 auto; min-height: 0; box-shadow: none; border-radius: 14px; }
+.bk3d .bk-page { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

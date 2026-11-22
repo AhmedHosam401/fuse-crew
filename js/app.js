@@ -39,8 +39,8 @@ const S = {
   sheet: null, authTab: 'in', authName: '', authErr: '', authBusy: false,
   fname: '', fmsg: '', fok: false, fbusy: false, fdel: null, invited: {}, bioMsg: '',
   notice: null, dismissed: new Set(), reqAlert: null, locked: false, lockErr: '',
-  // how I see the game (my own choice, kept on this device): 'ui' | '2d' | '3d'. no3d = this browser cannot do WebGL.
-  view: Sc.VIEWS.includes(store.get('fuse-view')) ? store.get('fuse-view') : 'ui', no3d: false, ev: null, sc3: null, sc3Busy: false, scModel: null,
+  // how I see the game (my own choice, kept on this device): 'ui' | '3d' (an old saved '2d' means 'ui'). no3d = this browser cannot do WebGL.
+  view: store.get('fuse-view') === '3d' ? '3d' : 'ui', no3d: false, ev: null, w3: null, w3Busy: false,
 };
 
 // ---------------------------------------------------------------- small utils
@@ -143,60 +143,72 @@ function toggleEar() {
 }
 const myRoles = () => (S.room && S.room.round ? E.ROLES.filter((x) => S.room.round.roles[x] === S.uid) : []);
 
-// ---------------------------------------------------------------- game view (interface / 2D / 3D)
+// ---------------------------------------------------------------- game view (interface / 3D world)
+// In the 3D world the puzzle is made of objects you look at or touch (world3d.js, loaded on demand). The timer, the mic buttons and
+// the Mute's signals stay as ordinary controls around it. If the browser has no WebGL the player is put back on the interface.
 const webglOk = () => {
   try { const cv = document.createElement('canvas'); return !!(window.WebGLRenderingContext && (cv.getContext('webgl2') || cv.getContext('webgl'))); } catch (e) { return false; }
 };
-const effView = () => (S.view === '3d' && S.no3d ? '2d' : S.view);
+const effView = () => (S.view === '3d' && S.no3d ? 'ui' : S.view);
 function setView(v, save = true) {
   if (!Sc.VIEWS.includes(v)) return;
-  if (v === '3d') { if (S.no3d || !webglOk()) { S.no3d = true; toast(t('view3dNo')); return; } import('./scene3d.js').catch(() => {}); }   // start the download now, so a round does not wait for it
+  if (v === '3d') {
+    if (S.no3d || !webglOk()) { S.no3d = true; toast(t('view3dNo')); render(); return; }
+    import('./world3d.js').catch(() => {});                // start the download now, so a round does not wait for it
+  }
   S.view = v; if (save) store.set('fuse-view', v);
-  S.regions = {}; if (S.screen === 'play') { sceneStop(); S.skel = ''; }
+  S.regions = {}; if (S.screen === 'play') { worldStop(); S.skel = ''; }
   render();
 }
-function cycleView() {
-  const next = (v) => Sc.VIEWS[(Sc.VIEWS.indexOf(v) + 1) % Sc.VIEWS.length];
-  let v = next(S.view);
-  if (v === '3d' && (S.no3d || !webglOk())) { S.no3d = true; v = next(v); }      // no WebGL here: skip 3D
-  setView(v);
+const cycleView = () => setView(S.view === '3d' ? 'ui' : '3d');
+function worldStop() {
+  if (S.w3) { try { S.w3.ctl.destroy(); } catch (e) { /* ignore */ } S.w3 = null; }
+  hideReveal();
 }
-function sceneStop() {
-  if (S.sc3) { try { S.sc3.ctl.destroy(); } catch (e) { /* ignore */ } S.sc3 = null; }
-}
-// the picture above the controls; redrawn only when the mood / role / mistakes change (the fuse + LED are patched in place)
-function renderScene(c, role) {
-  const view = effView();
-  const m = Sc.sceneModel(c, role, S.ev);
-  S.scModel = m;
-  if (view === 'ui') { sceneStop(); region('scene', ''); return; }
-  const mood = Sc.moodOf(m);
-  if (view === '2d') {
-    sceneStop();
-    region('scene', V.sceneWrapHTML(role, Sc.scene2dHTML(m, mood), 's2d'), Sc.sceneKey(m, mood));
-    Sc.tick2d(document.getElementById('r-scene'), m);
-    return;
+// the world's host (and, for the Mute, the book on its desk). Created once, then kept alive across modules, rounds and roles.
+function renderWorldHost(c, role) {
+  const main = document.getElementById('r-main');
+  if (!main) return;
+  if (S.w3 && !S.w3.host.isConnected) worldStop();           // the page was redrawn (language / theme): build the world again
+  let host = main.querySelector('.w3host');
+  if (!host) {
+    main.innerHTML = `<div class="w3host">${V.roleTagHTML(role)}<div class="w3load">${t('w3Loading')}</div></div>`;
+    host = main.firstChild; host.dataset.role = role; S.regions.main = 'w3';
   }
-  region('scene', V.sceneWrapHTML(role, '', 's3d'), `3d|${c.r.id}|${role}`);
-  ensure3d(role);
+  if (host.dataset.role !== role) {                           // practice: the same phone switched to another role
+    host.dataset.role = role;
+    const tag = host.querySelector('.sc-tag'); if (tag) tag.outerHTML = V.roleTagHTML(role);
+  }
+  if (!S.w3) { ensureWorld(host); return; }
+  if (role === 'mute') {                                      // the book is rewritten only when the page / the mistakes change, so a page flip plays once
+    const key = `${c.r.id}|${S.mpage}|${Math.min(c.game.strikes, 2)}|${getLang()}`;
+    if (S.w3.bookKey !== key) { S.w3.bookKey = key; S.w3.ctl.bookEl.innerHTML = V.mainHTML('mute', c.bomb, c.game, S.mpage, S.flip); }
+  }
 }
-async function ensure3d(role) {
-  if (S.sc3 && document.body.contains(S.sc3.canvas) && S.sc3.role === role) { S.sc3.ctl.update(S.scModel); return; }
-  sceneStop();
-  if (S.sc3Busy) return;
-  S.sc3Busy = true;
+async function ensureWorld(host) {
+  if (S.w3 || S.w3Busy) return;
+  S.w3Busy = true;
   try {
     if (!webglOk()) throw new Error('no webgl');
-    const mod = await import('./scene3d.js');
-    const host = document.getElementById('sc3dhost');
-    if (effView() !== '3d' || S.screen !== 'play' || !host || S.role !== role) return;
-    const ctl = mod.create(host, role);
-    S.sc3 = { ctl, canvas: ctl.canvas, role };
-    ctl.update(S.scModel);
+    const mod = await import('./world3d.js');
+    if (!host.isConnected || effView() !== '3d' || S.screen !== 'play') return;
+    const ctl = mod.createWorld(host, {
+      role: S.role,
+      onAction: doAction,
+      onReveal: (txt) => (txt == null ? hideReveal() : showReveal(txt)),
+      onBuzz: buzz,
+    });
+    const load = host.querySelector('.w3load'); if (load) load.remove();
+    S.w3 = { ctl, host, bookKey: '' };
+    renderPlay();
   } catch (e) {
     console.error(e);
-    S.no3d = true; S.regions = {}; sceneStop(); toast(t('view3dFail'));
-  } finally { S.sc3Busy = false; }
+    S.no3d = true; S.skel = ''; S.regions = {}; worldStop(); toast(t('view3dFail')); render();
+  } finally { S.w3Busy = false; }
+}
+// what the world shows follows the shared game; redrawn every frame by the world itself, this only hands it the newest state
+function renderWorld(c, role) {
+  if (S.w3) S.w3.ctl.update(Sc.worldModel(c, role, S.ev));
 }
 
 // ---------------------------------------------------------------- rendering
@@ -216,7 +228,7 @@ function applySense() {
 function render() {
   applySense();
   renderNotice();
-  if (S.screen !== 'play') sceneStop();
+  if (S.screen !== 'play') worldStop();
   if (S.screen === 'lock') return renderLock();
   if (S.screen === 'boot') return renderBoot();
   if (S.screen === 'home') return renderHome();
@@ -243,7 +255,7 @@ function renderHome() {
 function renderLobby() {
   S.skel = 'lobby';
   if (S.voice) S.voice.setRules({ speak: true, hear: true });     // between rounds everybody can talk and hear
-  app.innerHTML = V.lobbyHTML(S.room, S.code, S.uid, S.local, S.vs, !!S.profile && !S.local, effView() === '3d' ? '3d' : S.view, S.no3d);
+  app.innerHTML = V.lobbyHTML(S.room, S.code, S.uid, S.local, S.vs, !!S.profile && !S.local, effView(), S.no3d);
 }
 
 function region(id, html, key) {
@@ -258,7 +270,7 @@ function region(id, html, key) {
 function renderPlay() {
   const c = cur();
   if (!c) return;
-  if (S.skel !== 'play') { app.innerHTML = V.playSkeleton(effView()); S.skel = 'play'; S.regions = {}; sceneStop(); requestWake(); }
+  if (S.skel !== 'play') { app.innerHTML = V.playSkeleton(effView()); S.skel = 'play'; S.regions = {}; worldStop(); requestWake(); }
   const roles = myRoles();
   if (!roles.includes(S.role)) S.role = roles[0];
   const role = S.role;
@@ -273,7 +285,8 @@ function renderPlay() {
   updateClock(c);
   region('role', V.roleHTML(roles, role));
   // the Mute's book is redrawn only when the page / the mistakes / the round change, so a page flip plays once
-  region('main', V.mainHTML(role, c.bomb, c.game, S.mpage, S.flip), role === 'mute' ? `book|${c.r.id}|${S.mpage}|${Math.min(c.game.strikes, 2)}` : undefined);
+  if (effView() === '3d') renderWorldHost(c, role);
+  else region('main', V.mainHTML(role, c.bomb, c.game, S.mpage, S.flip), role === 'mute' ? `book|${c.r.id}|${S.mpage}|${Math.min(c.game.strikes, 2)}` : undefined);
   S.flip = null;
   // the senses are locked only once the clock actually runs: during the "get ready" countdown everybody still talks and hears
   const restricted = c.game.status === 'playing' && c.now >= c.game.startedAt;
@@ -297,7 +310,7 @@ function renderPlay() {
   const box = document.getElementById('logbox');
   if (box) box.scrollTop = box.scrollHeight;
   fx(c);
-  renderScene(c, role);
+  renderWorld(c, role);
 }
 
 // timer digits / bar are patched in place, so the pulse animation is not restarted every second
@@ -983,6 +996,7 @@ function showReveal(txt, wide) {
   if (!revealEl) { revealEl = document.createElement('div'); revealEl.className = 'reveal'; revealEl.setAttribute('aria-hidden', 'true'); document.body.appendChild(revealEl); }
   revealEl.textContent = txt; revealEl.classList.toggle('time', !!wide); revealEl.classList.add('on');
 }
+function hideReveal() { if (revealEl) revealEl.classList.remove('on'); }
 function tactAction(el, held) {
   const d = el.dataset;
   switch (d.tact) {

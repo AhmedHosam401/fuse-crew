@@ -11,7 +11,7 @@ const hex = (c) => COLOR_HEX[c];
 
 // ---------------------------------------------------------------- braille (numbers)
 // dots: 1 2 3 down the left column, 4 5 6 down the right column. A number is "number sign" + one cell per digit.
-const BR = { 1: [1], 2: [1, 2], 3: [1, 4], 4: [1, 4, 5], 5: [1, 5], 6: [1, 2, 4], 7: [1, 2, 4, 5], 8: [1, 2, 5], 9: [2, 4], 0: [2, 4, 5] };
+export const BR = { 1: [1], 2: [1, 2], 3: [1, 4], 4: [1, 4, 5], 5: [1, 5], 6: [1, 2, 4], 7: [1, 2, 4, 5], 8: [1, 2, 5], 9: [2, 4], 0: [2, 4, 5] };
 const DOT = { 1: [4, 4], 2: [4, 11], 3: [4, 18], 4: [10, 4], 5: [10, 11], 6: [10, 18] };
 const cell = (on) => `<svg class="brc" viewBox="0 0 14 22" width="14" height="22" aria-hidden="true">${[1, 2, 3, 4, 5, 6].map((n) =>
   `<circle cx="${DOT[n][0]}" cy="${DOT[n][1]}" r="${on.includes(n) ? 2.2 : 0.9}" class="${on.includes(n) ? 'on' : ''}"/>`).join('')}</svg>`;
