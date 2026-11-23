@@ -153,6 +153,37 @@ function chapterHTML(k, bomb, strikes) {
   return `<p class="lead">${t('leadMorse')}</p><div class="optable morsetab">${rows}</div>`;
 }
 
+// ---------------------------------------------------------------- the manual cut into blocks (for the real, paged book of the 3D world)
+// Each block is a piece of a page that is never split; keep = "stay on the same page as the block after me" (a heading).
+const blk = (html, keep = false) => ({ html, keep });
+const one = (inner) => `<div class="optable one">${inner}</div>`;
+export function chapterBlocks(k, bomb) {
+  const man = bomb.manual;
+  const head = blk(`<div class="bk-head"><h3>${t('mod_' + k)}</h3></div>`, true);
+  if (k === 'wires') {
+    return [head, blk(`<p class="lead">${t('leadWires')}</p>`, true), ...[3, 4, 5].map((n) =>
+      blk(`<div class="rule"><span class="rbadge">${n}</span><div><b>${t('wiresCount', { n })}</b><br>${t('ruleWires', { a: sw(man.wires[n].a), b: sw(man.wires[n].b) })}</div></div>`))];
+  }
+  if (k === 'symbols') {
+    return [head, blk(`<p class="lead">${t('ruleSymbols')}</p>`, true), blk(`<div class="rank">${man.symbols.map((s, i) => `<span>${s}<small>${i + 1}</small></span>`).join('')}</div>`)];
+  }
+  if (k === 'code') {
+    return [head, blk(`<p class="lead">${t('ruleCode')}</p>`, true), ...CODE_COLORS.map((c) => blk(one(`<div>${sw(c)}<span>${opText(man.code[c])}</span></div>`)))];
+  }
+  if (k === 'lamps') {
+    return [head, blk(`<p class="lead">${t('leadLamps')}</p><div class="legend"><span><i class="lc" style="--lc:#8a90a6">1</i>${t('legendLamp')}</span><span><i class="lb">1</i>${t('legendBtn')}</span></div>`, true),
+      ...[0, 1, 2].map((s) => blk(`<div class="ltable" data-s="${s}"><div class="lt-h">${t(s === 2 ? 'lampsStrikes2' : 'lampsStrikes', { n: s })}<em>${t('tableNow')}</em></div>
+        <div class="lt-rows">${man.lamps[s].map((b, i) => `<div class="lt-r"><span class="lc" style="--lc:${hex(LAMP_COLORS[i])}">${i + 1}</span><span class="lt-w"></span><span class="lb">${b}</span></div>`).join('')}</div></div>`))];
+  }
+  if (k === 'button') {
+    return [head, blk(`<p class="lead">${t('leadButton')}</p>`, true), blk(`<h4>${t('btnBodyHdr')}</h4>`, true),
+      ...BTN_BODIES.map((c) => blk(one(`<div>${sw(c)}<span class="tag ${man.button.act[c]}">${t(man.button.act[c] === 'tap' ? 'btnTap' : 'btnHold')}</span></div>`))),
+      blk(`<h4>${t('btnStripHdr')}</h4><p class="lead small">${t('btnRelease')}</p>`, true),
+      ...BTN_STRIPS.map((c) => blk(one(`<div>${sw(c)}<span class="num">${man.button.hold[c]}</span></div>`)))];
+  }
+  return [head, blk(`<p class="lead">${t('leadMorse')}</p>`, true), ...man.morse.map((d, i) => blk(one(`<div>${dots([i >> 2 & 1, i >> 1 & 1, i & 1])}<span class="num">${d}</span></div>`)))];
+}
+
 export function bookHTML(bomb, game, page, flip) {
   const chapters = ['toc', ...bomb.types];
   const cur = chapters.includes(page) ? page : 'toc';

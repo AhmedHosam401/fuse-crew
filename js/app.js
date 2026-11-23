@@ -180,10 +180,6 @@ function renderWorldHost(c, role) {
     const tag = host.querySelector('.sc-tag'); if (tag) tag.outerHTML = V.roleTagHTML(role);
   }
   if (!S.w3) { ensureWorld(host); return; }
-  if (role === 'mute') {                                      // the book is rewritten only when the page / the mistakes change, so a page flip plays once
-    const key = `${c.r.id}|${S.mpage}|${Math.min(c.game.strikes, 2)}|${getLang()}`;
-    if (S.w3.bookKey !== key) { S.w3.bookKey = key; S.w3.ctl.bookEl.innerHTML = V.mainHTML('mute', c.bomb, c.game, S.mpage, S.flip); }
-  }
 }
 async function ensureWorld(host) {
   if (S.w3 || S.w3Busy) return;
@@ -197,6 +193,7 @@ async function ensureWorld(host) {
       onAction: doAction,
       onReveal: (txt) => (txt == null ? hideReveal() : showReveal(txt)),
       onBuzz: buzz,
+      onPose: sendPose,
     });
     const load = host.querySelector('.w3load'); if (load) load.remove();
     S.w3 = { ctl, host, bookKey: '' };
@@ -208,7 +205,14 @@ async function ensureWorld(host) {
 }
 // what the world shows follows the shared game; redrawn every frame by the world itself, this only hands it the newest state
 function renderWorld(c, role) {
-  if (S.w3) S.w3.ctl.update(Sc.worldModel(c, role, S.ev));
+  if (!S.w3) return;
+  S.w3.ctl.update(Sc.worldModel(c, role, S.ev));
+  S.w3.ctl.setPoses(S.room.pose || null);
+}
+// what I am doing in the world (the Mute's hands and head, the Deaf's head) is shared, so the others see it on my character
+function sendPose(role, pose) {
+  if (!S.net || !S.code || !myRoles().includes(role)) return;
+  S.net.set(`rooms/${S.code}/pose/${role}`, pose);
 }
 
 // ---------------------------------------------------------------- rendering
@@ -626,7 +630,7 @@ async function startRound(level) {
     : E.randomRoles(ids, E.mulberry32((seed ^ 0xa5a5a5a5) >>> 0), room.round && room.round.roles);
   level = Math.max(1, Math.min(E.LEVEL_COUNT, level));
   await S.net.update('rooms/' + S.code, {
-    phase: 'play', roundNo: rn, gestures: null, chat: null, gnote: null,
+    phase: 'play', roundNo: rn, gestures: null, chat: null, gnote: null, pose: null,
     level, unlocked: Math.max(unlockedOf(room), level),
     round: { id: rn, seed, level, roles, startedAt, game: E.freshGame(bomb, startedAt) },
   });

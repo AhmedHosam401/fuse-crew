@@ -40,7 +40,7 @@ export function worldModel(c, role, ev) {
   }
   const base = sceneModel(c, role, ev);
   if (role === 'blind') base.rem = 0;                        // the Blind has no clock: the world is not even told the time
-  return { ...base, mod, game, fog: !!bomb.fog };
+  return { ...base, mod, game, fog: !!bomb.fog, bomb: role === 'mute' ? bomb : null };
 }
 
 // calm | tense | hit | cheer | win | lose

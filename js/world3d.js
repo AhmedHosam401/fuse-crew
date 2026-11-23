@@ -5,8 +5,10 @@
 //           faint outline with the module's parts on it as touchable shapes + braille. A tap does the thing (the wire really snaps),
 //           a long press shows the number, the big button reports how long it was held.
 //   Deaf  — stands behind the Blind and SEES the bomb: the sloped panel with the module built from real, coloured parts. In the
-//           same room the Blind sits at the bomb with his hands on it, and the Mute reads his book on the other side.
-//   Mute  — sits at a desk with the manual: a real open book (leather cover, a thickness of pages, a ribbon) whose page he reads and turns.
+//           same room the Blind sits at the bomb with his hands resting on the table, and the Mute stands at a high desk at the back.
+//   Mute  — stands at that desk and reads a real open book (two pages, he turns them). A long press puts the book down on the desk:
+//           he sees the room around him (the back of the bomb, the Deaf, the Blind), has two hands with five fingers to make numbers
+//           and signs with, and turns his head by dragging. The Deaf sees all of that on his character, and the Mute sees the Deaf's head.
 //
 
 // It is only a view of the shared game state (same rules as the interface); nothing here decides anything.
@@ -17,6 +19,9 @@ import { fmt } from './ui.js';
 import { moodOf, ROLE_HEX } from './scene.js';
 import { buildSee, buildFeel } from './world-modules.js';
 import { makeBook } from './world-book.js';
+import { createSpread } from './bookspread.js';
+import { makeHand, makeArm, countOf, raised, SIGNS, FLIP, UP } from './world-hands.js';
+import { t } from './i18n.js';
 import { makeKit, ledScreen, hazardTex, canvasTex, labelTex } from './world-art.js';
 
 const DARK = 0x111827;
@@ -63,15 +68,23 @@ const SEE_SCALE = 1.12; const FEEL_SCALE = 0.8;
 
 // where the camera sits for each role (the fov is worked out from the size of the screen; the Mute's is worked out in fit())
 const RIG = {
-  deaf: { pos: new THREE.Vector3(0.1, 3.1, 4.9), look: new THREE.Vector3(0, 1.15, -0.2), fitW: 3.75 },
+  deaf: { pos: new THREE.Vector3(0.1, 3.3, 4.9), look: new THREE.Vector3(0.15, 1.75, -0.2), fitW: 3.9 },
   blind: { pos: PANEL_WORLD.clone().addScaledVector(NRM, 3.9), look: PANEL_WORLD.clone(), fitW: 2.72 },
   mute: { pos: new THREE.Vector3(0, 9, 8), look: new THREE.Vector3(0, 0.5, 1), fitW: 0 },      // (the Mute's is worked out in fit())
 };
-const BOOK_Z = 0.8; const BOOK_TILT = 0.5;                                      // the Mute's book: where it lies, how far it leans back
-const MUTE_FOV = 22; const MUTE_DIST = 9.5; const MUTE_ELEV = 0.55; const MUTE_FILL = 0.78; const MUTE_SHIFT = 0.04;   // how the Mute looks at it
+const BOOK_TILT = 0.5;                                                          // the Mute's book leans back this much on its stand
+// the Mute: a high desk at the back of the room (the Deaf sees him above the bomb); his eyes, and where he looks when the book is down
+const DESK_Y = 1.8; const MUTE_AT = new THREE.Vector3(0.2, DESK_Y, -3.95); const MUTE_SC = 1.25;
+const BOOK_AT = new THREE.Vector3(0.2, DESK_Y, -3.15);
+const EYE = new THREE.Vector3(0.2, DESK_Y + 1.15, -4.3);
+const DESK_FOV = 62; const DESK_LOOK = new THREE.Vector3(0.75, 2.2, 1.0);
+const BLIND_AT = new THREE.Vector3(-0.55, 0, 1.55); const BLIND_SIDE = new THREE.Vector3(-2.15, 0, 1.0); const DEAF_AT = new THREE.Vector3(2.25, 0, 2.2);
+// his hands: where they are when he holds the book, rests on the desk, or shows a number / a sign (in his character's own frame)
+const HAND_POS = { hold: { l: [0.46, 0.5, 0.95], r: [-0.46, 0.5, 0.95] }, rest: { l: [0.62, 0.3, 0.8], r: [-0.62, 0.3, 0.8] }, show: { l: [0.95, 1.3, 0.55], r: [-0.95, 1.3, 0.55] } };
+const MUTE_FOV = 22; const MUTE_DIST = 9.5; const MUTE_ELEV = 0.55; const MUTE_FILL = 0.8; const MUTE_SHIFT = 0.03;   // how the Mute looks at his book
 
 export function createWorld(host, opts) {
-  const { onAction = () => {}, onReveal = () => {}, onBuzz = () => {} } = opts;
+  const { onAction = () => {}, onReveal = () => {}, onBuzz = () => {}, onPose = () => {} } = opts;
   let role = opts.role;
   const kit = makeKit();
   const canvas = document.createElement('canvas'); canvas.className = 'w3canvas'; host.appendChild(canvas);
@@ -101,8 +114,16 @@ export function createWorld(host, opts) {
     for (let i = 0; i < 26; i++) { g.fillStyle = i % 2 ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.06)'; g.fillRect(0, i * 10 + (i * 7) % 5, w, 3 + (i % 3)); }
   }));
   wood.wrapS = wood.wrapT = THREE.RepeatWrapping; wood.repeat.set(3, 2);
-  add(room, new THREE.BoxGeometry(7.4, 0.3, 6.6), std(0xffffff, { map: wood, roughness: 0.8 }), 0, -0.15, 0.8);
-  add(room, new THREE.BoxGeometry(7.6, 0.06, 6.8), std(0x2a1f18, { roughness: 0.9 }), 0, -0.32, 0.8);
+  add(room, new THREE.BoxGeometry(7.4, 0.3, 8.8), std(0xffffff, { map: wood, roughness: 0.8 }), 0, -0.15, -0.2);
+  add(room, new THREE.BoxGeometry(7.6, 0.06, 9.0), std(0x2a1f18, { roughness: 0.9 }), 0, -0.32, -0.2);
+  {                                                         // the Mute's high desk at the back: a front board, a top and a shelf under it
+    const dw = std(0x6b4a34, { roughness: 0.75 }); const dd = std(0x3a2a1e, { roughness: 0.9 });
+    add(room, new THREE.BoxGeometry(3.8, DESK_Y, 0.16), dw, MUTE_AT.x, DESK_Y / 2, -2.65);
+    add(room, new THREE.BoxGeometry(3.9, 0.12, 1.7), dw, MUTE_AT.x, DESK_Y - 0.06, -3.45);
+    add(room, new THREE.BoxGeometry(3.8, 0.1, 0.1), dd, MUTE_AT.x, DESK_Y - 0.2, -2.55);
+    [-1, 1].forEach((sx) => add(room, new THREE.BoxGeometry(0.16, DESK_Y, 1.7), dd, MUTE_AT.x + sx * 1.9, DESK_Y / 2, -3.45));
+    add(room, new THREE.BoxGeometry(3.7, DESK_Y - 0.1, 1.6), dd, MUTE_AT.x, (DESK_Y - 0.1) / 2, -3.45);
+  }
   const wall = add(room, new THREE.PlaneGeometry(16, 7), std(0x1a1e33, { roughness: 1 }), 0, 2.2, -4.6);
   // shelves + crates on the back wall, to give the room some depth
   [[-3.6, 0.6, -4.2, 1.1, 1.2], [-2.2, 0.35, -4.3, 0.8, 0.7], [3.4, 0.55, -4.2, 1.2, 1.1], [2.0, 0.3, -4.3, 0.7, 0.6]].forEach(([x, y, z, w, h], i) => {
@@ -179,59 +200,70 @@ export function createWorld(host, opts) {
   function makeChar(r) {
     const g = new THREE.Group(); scene.add(g);
     const inner = new THREE.Group(); g.add(inner);
+    const head = new THREE.Group(); head.position.y = 0.7; inner.add(head);              // the blob is the head: it turns and nods (a pose) on its own
+    const hin = new THREE.Group(); hin.position.y = -0.7; head.add(hin);
     const color = new THREE.Color(ROLE_HEX[r]); const bm = std(color, { roughness: 0.42 });
-    add(inner, new THREE.SphereGeometry(0.7, 32, 24), bm, 0, 0.7, 0);
-    add(inner, new THREE.SphereGeometry(0.13, 10, 8), kit.basic(0xffffff, { transparent: true, opacity: 0.3 }), -0.28, 1.12, 0.46).scale.set(1.3, 0.7, 0.5);
+    add(hin, new THREE.SphereGeometry(0.7, 32, 24), bm, 0, 0.7, 0);
+    add(hin, new THREE.SphereGeometry(0.13, 10, 8), kit.basic(0xffffff, { transparent: true, opacity: 0.3 }), -0.28, 1.12, 0.46).scale.set(1.3, 0.7, 0.5);
     const eyeW = kit.basic(0xffffff); const dark = kit.basic(DARK); const eyes = [];
     if (r !== 'blind') {
       [-1, 1].forEach((sx) => {
         const e = new THREE.Group(); e.position.set(sx * 0.25, 0.8, 0.58);
         add(e, new THREE.SphereGeometry(0.15, 14, 10), eyeW); add(e, new THREE.SphereGeometry(0.075, 10, 8), dark, sx * 0.02, 0, 0.12);
-        inner.add(e); eyes.push(e);
+        hin.add(e); eyes.push(e);
       });
     }
     const mouths = {};
     if (r !== 'mute') {
-      mouths.smile = add(inner, new THREE.TorusGeometry(0.15, 0.028, 8, 18, Math.PI), dark, 0, 0.5, 0.635); mouths.smile.rotation.z = Math.PI;
-      mouths.flat = add(inner, new THREE.BoxGeometry(0.3, 0.045, 0.05), dark, 0, 0.45, 0.65);
-      mouths.o = add(inner, new THREE.SphereGeometry(0.1, 12, 10), dark, 0, 0.44, 0.64); mouths.o.scale.set(1, 1.25, 0.4);
-      mouths.big = add(inner, new THREE.SphereGeometry(0.16, 14, 10), dark, 0, 0.45, 0.63); mouths.big.scale.set(1.35, 1, 0.4);
+      mouths.smile = add(hin, new THREE.TorusGeometry(0.15, 0.028, 8, 18, Math.PI), dark, 0, 0.5, 0.635); mouths.smile.rotation.z = Math.PI;
+      mouths.flat = add(hin, new THREE.BoxGeometry(0.3, 0.045, 0.05), dark, 0, 0.45, 0.65);
+      mouths.o = add(hin, new THREE.SphereGeometry(0.1, 12, 10), dark, 0, 0.44, 0.64); mouths.o.scale.set(1, 1.25, 0.4);
+      mouths.big = add(hin, new THREE.SphereGeometry(0.16, 14, 10), dark, 0, 0.45, 0.63); mouths.big.scale.set(1.35, 1, 0.4);
       Object.values(mouths).forEach((m) => { m.visible = false; });
     }
     if (r === 'blind') {
-      add(inner, new THREE.CylinderGeometry(0.735, 0.735, 0.3, 28, 1, true), std(0x1f2937, { side: THREE.DoubleSide }), 0, 0.82, 0);
-      [-1, 1].forEach((sx) => { const t = add(inner, new THREE.BoxGeometry(0.22, 0.07, 0.05), std(0x1f2937), sx * 0.2, 0.82, -0.76); t.rotation.z = sx * 0.5; });
+      add(hin, new THREE.CylinderGeometry(0.735, 0.735, 0.3, 28, 1, true), std(0x1f2937, { side: THREE.DoubleSide }), 0, 0.82, 0);
+      [-1, 1].forEach((sx) => { const t2 = add(hin, new THREE.BoxGeometry(0.22, 0.07, 0.05), std(0x1f2937), sx * 0.2, 0.82, -0.76); t2.rotation.z = sx * 0.5; });
     }
-    if (r === 'mute') {
-      add(inner, new THREE.BoxGeometry(0.5, 0.2, 0.05), std(0xe5e7eb), 0, 0.46, 0.665);
-      [0.55, -0.55].forEach((a) => { add(inner, new THREE.BoxGeometry(0.34, 0.03, 0.02), kit.basic(0x6b7280), 0, 0.46, 0.7).rotation.z = a; });
+    if (r === 'mute') {                                                                   // a strip of tape over the mouth
+      add(hin, new THREE.BoxGeometry(0.5, 0.2, 0.05), std(0xe5e7eb), 0, 0.46, 0.665);
+      [0.55, -0.55].forEach((a) => { add(hin, new THREE.BoxGeometry(0.34, 0.03, 0.02), kit.basic(0x6b7280), 0, 0.46, 0.7).rotation.z = a; });
     }
     if (r === 'deaf') {
       const band = std(0x374151);
-      add(inner, new THREE.TorusGeometry(0.75, 0.05, 8, 32, Math.PI), band, 0, 0.74, 0);
-      [-1, 1].forEach((sx) => { add(inner, new THREE.CylinderGeometry(0.21, 0.21, 0.15, 18), band, sx * 0.73, 0.74, 0).rotation.z = Math.PI / 2; });
+      add(hin, new THREE.TorusGeometry(0.75, 0.05, 8, 32, Math.PI), band, 0, 0.74, 0);
+      [-1, 1].forEach((sx) => { add(hin, new THREE.CylinderGeometry(0.21, 0.21, 0.15, 18), band, sx * 0.73, 0.74, 0).rotation.z = Math.PI / 2; });
     }
-    // arms: the Blind reaches for the bomb, the Mute holds his book, the Deaf keeps his hands down
-    const limb = (a, b, rad) => {
-      const d = b.clone().sub(a); const len = d.length();
-      const m = add(inner, new THREE.CylinderGeometry(rad, rad, len, 10), bm, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
-      add(inner, new THREE.SphereGeometry(rad * 1.45, 12, 10), bm, b.x, b.y, b.z);
-    };
-    const reach = { blind: [0.36, 1.3, 2.0], mute: [0.4, 0.5, 0.95], deaf: [0.7, 0.3, 0.2] }[r];
-    [-1, 1].forEach((sx) => limb(new THREE.Vector3(sx * 0.62, 0.5, 0.15), new THREE.Vector3(sx * reach[0], reach[1], reach[2]), 0.085));
-    add(inner, new THREE.CylinderGeometry(0.03, 0.03, 0.26, 6), std(0xa16207), 0.1, 1.44, 0).rotation.z = -0.5;
-    add(inner, new THREE.SphereGeometry(0.07, 8, 6), kit.basic(0xfde047), 0.2, 1.54, 0);
-    chars[r] = { g, inner, bm, color, eyes, mouths, phase: Math.random() * 6, side: 0 };
+    add(hin, new THREE.CylinderGeometry(0.03, 0.03, 0.26, 6), std(0xa16207), 0.1, 1.44, 0).rotation.z = -0.5;
+    add(hin, new THREE.SphereGeometry(0.07, 8, 6), kit.basic(0xfde047), 0.2, 1.54, 0);
+    const c = { g, inner, head, bm, color, eyes, mouths, phase: Math.random() * 6, side: 0, look: { y: 0, p: 0 } };
+    if (r === 'mute') {
+      // two hands with five fingers on arms that follow them: they hold the book, rest on the desk, or show a number / a sign
+      c.hands = {}; c.arms = {}; c.hp = {}; c.shoulder = { l: new THREE.Vector3(0.6, 0.52, 0.15), r: new THREE.Vector3(-0.6, 0.52, 0.15) };
+      ['l', 'r'].forEach((sd) => {
+        const h = makeHand(kit, color, sd); h.group.scale.setScalar(0.95); inner.add(h.group);
+        c.hands[sd] = h; c.arms[sd] = makeArm(kit, inner, bm, 0.09); c.hp[sd] = new THREE.Vector3().fromArray(HAND_POS.hold[sd]);
+      });
+    } else {
+      // the Blind rests his hands on the table in front of him, the Deaf lets his arms hang
+      const reach = r === 'blind' ? [0.42, 0.2, 0.95] : [0.7, 0.3, 0.2];
+      [-1, 1].forEach((sx) => {
+        const a = new THREE.Vector3(sx * 0.62, 0.5, 0.15); const b2 = new THREE.Vector3(sx * reach[0], reach[1], reach[2]);
+        const arm = makeArm(kit, inner, bm, 0.085); arm.update(a, b2);
+        add(inner, new THREE.SphereGeometry(0.125, 12, 10), bm, b2.x, b2.y, b2.z);
+      });
+    }
+    chars[r] = c;
   }
   ['blind', 'deaf', 'mute'].forEach(makeChar);
 
   // ================================================================= the books
-  // (a) the Mute's own: lies on his desk, leaning back on a stand; the manual (HTML) is laid exactly on its right-hand page
-  const bookRoot = new THREE.Group(); scene.add(bookRoot);
+  // (a) the Mute's own, open on his desk and leaning back on a wedge: its two pages are the manual (HTML), laid exactly on them
+  const bookRoot = new THREE.Group(); bookRoot.rotation.y = Math.PI; scene.add(bookRoot);      // its reader is the Mute, at the north end
   const bookTilt = new THREE.Group(); bookTilt.rotation.x = BOOK_TILT; bookRoot.add(bookTilt);
   let bookKit = null;
-  const bookEl = document.createElement('div'); bookEl.className = 'bk3d';
+  const bookEl = document.createElement('div');
+  const spreadCtl = createSpread(bookEl, { onLongPress: () => { if (role === 'mute' && !desk.down) setDown(true); } });
   let css = null; let cssObj = null; let cssCam = null; let K = 100; let pageW = 300; let pageH = 300;
   function ensureCss() {
     if (css) return;
@@ -240,32 +272,41 @@ export function createWorld(host, opts) {
     const cssScene = new THREE.Scene(); cssScene.add(cssObj); css.scene = cssScene;
     cssCam = new THREE.PerspectiveCamera(40, 1, 1, 100000);
   }
-  // rest a tilted book (its near edge) on the desk: how high its centre has to be
+  // how high the middle of a tilted book has to be so that its lowest corner touches the desk
   const restY = (b, H) => (b.T + b.C) * Math.cos(BOOK_TILT) + (H / 2 + b.over) * Math.sin(BOOK_TILT);
   let bookW = 0; let bookH = 0;
-  function rebuildBook(W, H) {
+  function rebuildBook(W, H) {                                                          // W x H = one page
     if (Math.abs(W - bookW) < 0.004 && Math.abs(H - bookH) < 0.004) return;
     bookW = W; bookH = H;
     bookRoot.remove(...bookRoot.children.filter((c) => c !== bookTilt)); bookTilt.remove(...bookTilt.children);
     if (bookKit) bookKit.dispose();
-    bookKit = makeKit(); const b = makeBook(W, H, bookKit); bookTilt.add(b.group);
-    const cy = restY(b, H); bookRoot.position.set(0, cy, BOOK_Z);
+    bookKit = makeKit(); const b = makeBook(W, H, bookKit, { text: true }); bookTilt.add(b.group);
+    const cy = restY(b, H); bookRoot.position.set(BOOK_AT.x, DESK_Y + cy, BOOK_AT.z);
     // a wooden wedge under the back of the book, so it really leans on something
     const c = Math.cos(BOOK_TILT); const sn = Math.sin(BOOK_TILT); const hh = H / 2 + b.over; const lo = b.T + b.C;
     const zn = -lo * sn + hh * c; const zf = -lo * sn - hh * c; const hF = 2 * hh * sn - 0.02;
     const shape = new THREE.Shape(); shape.moveTo(zn, 0); shape.lineTo(zf, 0); shape.lineTo(zf, hF); shape.closePath();
-    const depth = (2 * W + 2 * b.over) * 0.7;
+    const depth = b.cw * 0.7;
     const geo = bookKit.geo(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false })); geo.translate(0, 0, -depth / 2);
     const wedge = new THREE.Mesh(geo, bookKit.std(0x4a3526, { roughness: 0.85 }));
-    wedge.rotation.y = -Math.PI / 2; wedge.position.set(-(W + b.gap) / 2, -cy, 0); bookRoot.add(wedge);
+    wedge.rotation.y = -Math.PI / 2; wedge.position.set(0, -cy, 0); bookRoot.add(wedge);
   }
-  // (b) the small one the Mute holds up on the other side of the room (the Deaf sees its cover, and him behind it)
-  const miniKit = makeKit(); const miniRoot = new THREE.Group(); scene.add(miniRoot);
+  // (b) the same book put down on the desk, small, where the Mute sees it once he let go of it (a long press on it picks it up again)
+  const deskKit = makeKit(); const deskRoot = new THREE.Group(); scene.add(deskRoot); deskRoot.visible = false;
+  const deskHits = [];
   {
-    const MT = 0.95; const mb = makeBook(0.62, 0.5, miniKit, { text: true });
+    const DT = 0.16; const db = makeBook(0.62, 0.8, deskKit, { text: true });
+    const tilt = new THREE.Group(); tilt.rotation.x = DT; tilt.add(db.group); deskRoot.add(tilt);
+    tilt.traverse((m) => { if (m.isMesh) { m.userData.deskBook = true; deskHits.push(m); } });
+    deskRoot.rotation.y = Math.PI; deskRoot.position.set(BOOK_AT.x, DESK_Y + (db.T + db.C) * Math.cos(DT) + (0.4 + db.over) * Math.sin(DT), -3.0);
+  }
+  // (c) the one the Deaf sees him hold up in front of his chest (we see its back cover)
+  const miniKit = makeKit(); const miniRoot = new THREE.Group(); chars.mute.inner.add(miniRoot);
+  {
+    const MT = 0.95; const mb = makeBook(0.6, 0.48, miniKit, { text: true });
     const tilt = new THREE.Group(); tilt.rotation.x = MT; tilt.add(mb.group); miniRoot.add(tilt);
-    miniRoot.rotation.y = Math.PI;                                           // its pages face the Mute, we see the back
-    miniRoot.position.set(1.8, (mb.T + mb.C) * Math.cos(MT) + (0.25 + mb.over) * Math.sin(MT) + 0.05, -0.7);
+    miniRoot.rotation.y = Math.PI;                                                       // its pages face him, we see the back
+    miniRoot.position.set(0, 0.4 + (mb.T + mb.C) * 0.5, 1.12);
   }
 
   // ================================================================= effects
@@ -283,6 +324,52 @@ export function createWorld(host, opts) {
   let hits = [];
   const camPos = RIG[role].pos.clone(); const camLook = RIG[role].look.clone(); let camFrom = null; let camT = 1;
   let orbit = { yaw: 0, pitch: 0, dragging: false, x: 0, y: 0, id: null };
+  const desk = { down: false, k: 0 };            // the Mute's book: k 0 = in his hands, reading; 1 = put down on the desk (animated)
+  const look = { y: 0, p: 0 };                    // his head when the book is down: yaw (positive = to his left) and pitch (positive = down), from straight ahead
+  let myHands = [0, 0];                           // what his two hands show
+  let remote = { mute: null, deaf: null };        // the others' poses, from the shared state
+  let sentPose = ''; let sentAt = 0; let lastRound = null;
+  const muteRig = { pos: new THREE.Vector3(), look: new THREE.Vector3(), fov: DESK_FOV };
+  const fpLay = { x: 0.5, lo: -1, hi: -0.7, sc: 0.8 };
+  const deskDir = DESK_LOOK.clone().sub(EYE).normalize();
+  const deskYaw0 = Math.atan2(deskDir.x, deskDir.z); const deskElev0 = Math.asin(deskDir.y);
+  look.y = deskYaw0; look.p = -deskElev0;
+  const LOOK_Y = 1.25; const LOOK_UP = -0.65; const LOOK_DOWN = 0.95;
+  const deskLookPt = new THREE.Vector3(); const tv = new THREE.Vector3();
+  // the number he shows with his fingers, floating next to his hands for the Deaf
+  const badgeTex = {};
+  const badge = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false })); badge.scale.set(1, 1, 1); badge.renderOrder = 10; badge.visible = false; scene.add(badge);
+  const badgeMap = (n) => badgeTex[n] || (badgeTex[n] = kit.tex(canvasTex(96, 96, (g, w, h) => {
+    g.fillStyle = 'rgba(8,12,24,.78)'; g.beginPath(); g.arc(w / 2, h / 2, 42, 0, Math.PI * 2); g.fill(); g.lineWidth = 4; g.strokeStyle = ROLE_HEX.mute; g.stroke();
+    g.fillStyle = '#fff'; g.font = '900 54px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), w / 2, h / 2 + 3);
+  })));
+  // his own hands, in front of him (they are children of the camera): tap a finger to raise or fold it
+  scene.add(camera);
+  // (seen from behind his own hands the palms face the camera, thumbs toward the middle: the left-of-screen hand is built as a "right" one)
+  const fp = { l: makeHand(kit, new THREE.Color(ROLE_HEX.mute), 'r'), r: makeHand(kit, new THREE.Color(ROLE_HEX.mute), 'l') };
+  fp.l.hits.forEach((h) => { h.userData.hand = 'l'; }); fp.r.hits.forEach((h) => { h.userData.hand = 'r'; });
+  const fpRoot = new THREE.Group(); camera.add(fpRoot); fpRoot.visible = false;
+  ['l', 'r'].forEach((sd) => { const h = fp[sd].group; h.position.set(sd === 'l' ? -0.5 : 0.5, -0.9, -1.7); h.scale.setScalar(0.85); fpRoot.add(h); });
+  const fpHits = [...fp.l.hits, ...fp.r.hits];
+  // they are drawn in a second pass on top of everything (layer 1, with their own light), so the book on the desk can never hide them
+  fpRoot.traverse((o) => o.layers.set(1));
+  { const l1 = new THREE.HemisphereLight(0xffffff, 0x6a6f94, 1.7); l1.layers.set(1); scene.add(l1); const l2 = new THREE.DirectionalLight(0xfff4e0, 1.8); l2.position.set(1, 2, 3); l2.layers.set(1); scene.add(l2); }
+  // the little texts and the sign buttons over the world
+  const hud = document.createElement('div'); hud.className = 'w3hud'; hud.hidden = true;
+  hud.innerHTML = `<div class="w3hint"></div><div class="w3signs">${[['yes', '👍'], ['no', '👎'], ['stop', '✋'], ['fist', '✊'], ['one', '☝️'], ['two', '✌️'], ['rest', '⬇️']].map(([k, e]) => `<button type="button" data-sign="${k}" aria-label="${t('sign_' + k)}" title="${t('sign_' + k)}">${e}</button>`).join('')}</div>`;
+  host.appendChild(hud);
+  const hudHint = hud.querySelector('.w3hint'); const hudSigns = hud.querySelector('.w3signs');
+  hud.addEventListener('pointerdown', (e) => e.stopPropagation());
+  hud.addEventListener('click', (e) => { const b = e.target.closest('[data-sign]'); if (b) showSign(b.dataset.sign); });
+  function showSign(k) { myHands = k === 'rest' ? [0, 0] : SIGNS[k].slice(); }
+  function setDown(v) { if (role !== 'mute' || desk.down === v) return; desk.down = v; onBuzz(15); refreshHud(); }
+  function refreshHud() {
+    hud.hidden = role !== 'mute';
+    hud.dataset.mode = desk.down ? 'desk' : 'read';
+    hudHint.textContent = t(desk.down ? 'w3HintDesk' : 'w3HintRead');
+    hudHint.style.animation = 'none'; void hudHint.offsetWidth; hudHint.style.animation = '';        // the hint shows again, then fades
+    hudSigns.hidden = !desk.down;
+  }
 
   function fireworks() {
     const cols = ['#fb9250', '#4fd1c1', '#a99cf7', '#fde047', '#f472b6', '#60a5fa'].map((c) => new THREE.Color(c));
@@ -323,52 +410,56 @@ export function createWorld(host, opts) {
   }
 
   // ---- role: what is visible, the light, the camera
+  const put = (r, at, ry, sc) => { const c = chars[r]; c.g.visible = true; c.g.position.copy(at); c.g.rotation.y = ry; c.g.scale.setScalar(sc); };
   function applyRole(first) {
-    const blind = role === 'blind'; const mute = role === 'mute'; const deaf = role === 'deaf';
-    room.visible = !blind; bomb.visible = deaf; feel.visible = blind;
-    bookRoot.visible = mute; miniRoot.visible = deaf;
+    const blind = role === 'blind'; const mute = role === 'mute';
+    room.visible = !blind; feel.visible = blind;
     scene.background.setHex(BG[role]); scene.fog.color.setHex(BG[role]);
     hemi.visible = key.visible = lampLight.visible = !blind;
     Object.values(chars).forEach((c) => { c.g.visible = false; });
-    // Deaf's world: the Blind sits at the bomb (back to us, hands on it); the Mute reads his book behind it, on the right
-    // Mute's world: the other two are small, behind his desk
-    const put = (r, x, y, z, ry, sc) => { const c = chars[r]; c.g.visible = true; c.g.position.set(x, y, z); c.g.rotation.y = ry; c.g.scale.setScalar(sc); };
-    if (deaf) { put('blind', -0.55, 0, 1.55, Math.PI, 0.72); put('mute', 1.8, 0, -1.4, 0, 0.8); }
-    if (mute) { put('blind', -1.7, 0, -2.0, 0.35, 0.55); put('deaf', 1.7, 0, -2.0, -0.35, 0.55); }
-    ensureCssIfNeeded();
+    // Deaf's world: the Blind sits in front of the bomb (his back to us, his hands resting on the table), the Mute stands behind it at his high desk
+    // Mute's world: the Blind sits at the bomb, facing him, and the Deaf stands at the side watching
+    if (role === 'deaf') { put('blind', BLIND_AT, Math.PI, 0.72); put('mute', MUTE_AT, 0, MUTE_SC); }
+    if (mute) { put('blind', BLIND_SIDE, Math.atan2(BOMB_AT.x - BLIND_SIDE.x, BOMB_AT.z - BLIND_SIDE.z), 0.8); put('deaf', DEAF_AT, Math.atan2(BOMB_AT.x - DEAF_AT.x, BOMB_AT.z - DEAF_AT.z), 0.95); ensureCss(); }
     if (css) css.domElement.style.display = mute ? '' : 'none';
-    canvas.style.touchAction = blind ? 'none' : 'pan-y';
+    bookRoot.visible = mute; deskRoot.visible = false; fpRoot.visible = false; badge.visible = false;
+    canvas.style.touchAction = role === 'deaf' ? 'pan-y' : 'none';
     camFrom = { pos: camera.position.clone(), look: camLook.clone() }; camT = first ? 1 : 0;
-    cur.sig = ''; disposeModule();
+    cur.sig = ''; disposeModule(); refreshHud();
     fit();
   }
-  const ensureCssIfNeeded = () => { if (role === 'mute') ensureCss(); };
 
   function fit() {
     size = { w: host.clientWidth || 300, h: host.clientHeight || 300 };
+    host.dataset.tiny = size.h < 330 ? '1' : '';                       // a small screen: no corner tag over the picture
     renderer.setSize(size.w, size.h, false);
     camera.aspect = size.w / size.h;
-    const rig = RIG[role];
     if (role === 'mute') {
-      // The manual is a real page of the 3D scene: 1 CSS pixel = K * 1 world unit at the page, and the book is built to the page's size,
-      // so the page fills about 0.86 of the width and 0.78 of the height of the screen (foreshortened by the angle we look at it from).
-      camera.fov = MUTE_FOV; camera.updateProjectionMatrix();
+      // The manual is a real object of the 3D scene, so one CSS pixel = K world units where the book is, and the book is built to the size of its
+      // pages: the open book fills about 0.86 of the width and 0.8 of the height of the screen (foreshortened by the angle we look at it from).
       const p = size.h / 2 / Math.tan((MUTE_FOV * Math.PI) / 360); K = p / MUTE_DIST;
       const view = Math.PI / 2 - BOOK_TILT - MUTE_ELEV;                       // the angle between the way we look and the page's normal
-      pageW = Math.round(Math.min(size.w * 0.86, 680)); const tiny = size.h < 330;                                                  // a small phone: the page takes nearly all of it, so it can still be read
-      pageH = Math.round((size.h * (tiny ? 0.92 : MUTE_FILL)) / Math.cos(view));
-      rebuildBook(pageW / K, pageH / K);
-      const S = bookRoot.position.clone();                                      // the middle of the right-hand page
-      const up = new THREE.Vector3(0, Math.cos(MUTE_ELEV), -Math.sin(MUTE_ELEV));
-      const look = S.clone().addScaledVector(up, -(size.h * (tiny ? 0.02 : MUTE_SHIFT)) / K);   // so the page sits a little above the middle of the screen
-      rig.look.copy(look); rig.pos.copy(look).add(new THREE.Vector3(0, Math.sin(MUTE_ELEV), Math.cos(MUTE_ELEV)).multiplyScalar(MUTE_DIST));
+      const tiny = size.h < 330;                                              // a small phone: the book takes nearly all of it, so it can still be read
+      pageW = Math.round(Math.min(size.w * (size.w < 400 ? 0.95 : 0.9), 700)); pageH = Math.round((size.h * (tiny ? 0.93 : MUTE_FILL)) / Math.cos(view));
+      rebuildBook(pageW / 2 / K, pageH / K);
+      spreadCtl.fit(pageW, pageH);
+      const S = bookRoot.position.clone();                                     // the middle of the open book
+      const up = new THREE.Vector3(0, Math.cos(MUTE_ELEV), Math.sin(MUTE_ELEV));
+      muteRig.look.copy(S).addScaledVector(up, -(size.h * (tiny ? 0.02 : MUTE_SHIFT)) / K);
+      muteRig.pos.copy(muteRig.look).add(new THREE.Vector3(0, Math.sin(MUTE_ELEV), -Math.cos(MUTE_ELEV)).multiplyScalar(MUTE_DIST));
+      // when the book is down he looks around with a wide lens (a portrait phone is narrow, so the lens is taller than it is wide)
+      muteRig.fov = Math.max(52, Math.min(84, (2 * Math.atan(Math.tan(0.56) / camera.aspect) * 180) / Math.PI));
+      const dh = 1.7 * Math.tan((muteRig.fov * Math.PI) / 360); const dw = dh * camera.aspect;
+      fpLay.x = dw * 0.5; fpLay.lo = -dh * 0.74; fpLay.hi = -dh * 0.5; fpLay.sc = Math.max(0.55, Math.min(1.1, dw * 1.3, dh * 0.55));
+      camera.updateProjectionMatrix();
       if (css) {
         css.setSize(size.w, size.h);
         bookEl.style.width = `${pageW}px`; bookEl.style.height = `${pageH}px`;
-        cssObj.quaternion.setFromEuler(new THREE.Euler(BOOK_TILT - Math.PI / 2, 0, 0));
+        cssObj.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(BOOK_TILT - Math.PI / 2, 0, 0))));
         cssObj.position.set(S.x * K, S.y * K + 0.4, S.z * K);
       }
     } else {
+      const rig = RIG[role];
       const dist = rig.pos.distanceTo(rig.look);
       camera.fov = Math.min(72, Math.max(30, (2 * Math.atan(rig.fitW / 2 / camera.aspect / dist) * 180) / Math.PI));
       camera.updateProjectionMatrix();
@@ -378,7 +469,7 @@ export function createWorld(host, opts) {
   if (ro) ro.observe(host); else window.addEventListener('resize', fit);
 
   // ================================================================= the Blind's touch
-  const ray = new THREE.Raycaster(); const ndc = new THREE.Vector2();
+  const ray = new THREE.Raycaster(); const ndc = new THREE.Vector2(); ray.layers.enable(1);
   const press = { mesh: null, id: null, t0: 0, timer: 0, revealed: false, held: false };
   function pick(ev) {
     const r = canvas.getBoundingClientRect();
@@ -398,6 +489,21 @@ export function createWorld(host, opts) {
     else if (d.tact === 'key') onAction({ type: 'key', d: d.d });
     else onAction({ type: d.tact, i: d.i });
   }
+  // the Mute with his book down: drag = turn the head, tap a finger of his own hand = raise / fold it, long press on the book = pick it up
+  const fpHit = (ev) => {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -(((ev.clientY - r.top) / r.height) * 2 - 1));
+    ray.setFromCamera(ndc, camera);
+    const f = ray.intersectObjects(fpHits, false)[0]; const bk = !!ray.intersectObjects(deskHits, false)[0];
+    if (f) return { kind: 'finger', book: bk, ...f.object.userData };
+    return bk ? { kind: 'book', book: true } : null;
+  };
+  let mp = null;
+  const toggleFinger = (hand, f) => {
+    const i = hand === 'l' ? 0 : 1; let v = myHands[i] ^ (1 << f);
+    v &= ~FLIP; v = (v & 31) ? (v | UP) : (v & ~UP);
+    myHands[i] = v;
+  };
   canvas.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
     if (role === 'blind') {
@@ -411,6 +517,12 @@ export function createWorld(host, opts) {
     } else if (role === 'deaf') {
       orbit = { ...orbit, dragging: true, x: e.clientX, y: e.clientY, id: e.pointerId };
       try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    } else if (role === 'mute' && desk.down && desk.k > 0.9) {
+      if (mp) clearTimeout(mp.timer);
+      const h = fpHit(e);
+      mp = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, hit: h, done: false, timer: 0 };
+      if (h && h.book) mp.timer = setTimeout(() => { if (mp && !mp.moved) { mp.done = true; setDown(false); } }, 650);
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     }
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -419,10 +531,23 @@ export function createWorld(host, opts) {
       orbit.pitch = Math.max(-0.2, Math.min(0.25, orbit.pitch + (e.clientY - orbit.y) * 0.003));
       orbit.x = e.clientX; orbit.y = e.clientY;
     }
+    if (mp && e.pointerId === mp.id && !mp.done) {
+      if (!mp.moved && Math.hypot(e.clientX - mp.x, e.clientY - mp.y) > 9) { mp.moved = true; clearTimeout(mp.timer); }
+      if (mp.moved) {
+        const k = 0.0042 * (62 / muteRig.fov) ** 0.5;
+        look.y = Math.max(-LOOK_Y, Math.min(LOOK_Y, look.y - (e.clientX - mp.x) * k)); look.p = Math.max(LOOK_UP, Math.min(LOOK_DOWN, look.p + (e.clientY - mp.y) * k));
+        mp.x = e.clientX; mp.y = e.clientY;
+      }
+    }
   });
   const up = (e, fire) => {
     if (press.mesh && e.pointerId === press.id) pressEnd(fire);
     if (orbit.dragging && e.pointerId === orbit.id) orbit.dragging = false;
+    if (mp && e.pointerId === mp.id) {
+      clearTimeout(mp.timer);
+      if (fire && !mp.moved && !mp.done && mp.hit && mp.hit.kind === 'finger') { toggleFinger(mp.hit.hand, mp.hit.finger); onBuzz(8); }
+      mp = null;
+    }
   };
   canvas.addEventListener('pointerup', (e) => up(e, true));
   canvas.addEventListener('pointercancel', (e) => up(e, false));
@@ -437,7 +562,12 @@ export function createWorld(host, opts) {
     const rem = playing && model.started ? Math.max(0, model.rem - (now - at)) : model.rem;
     const since = (performance.now() - moodAt) / 1000;
     const lost = mood === 'lose'; const won = mood === 'win';
-    const blind = role === 'blind'; const deaf = role === 'deaf';
+    const blind = role === 'blind'; const deaf = role === 'deaf'; const mute = role === 'mute';
+    if (model.round !== lastRound) {                                   // a new round: the book is in his hands again, the hands are down, the head straight
+      lastRound = model.round; desk.down = false; desk.k = 0; myHands = [0, 0]; look.y = deskYaw0; look.p = -deskElev0; sentPose = ''; refreshHud();
+    }
+    desk.k = clamp01(desk.k + (desk.down ? dt : -dt) / 0.85);
+    const kk = desk.k * desk.k * (3 - 2 * desk.k);                     // eased 0 (reading) .. 1 (book on the desk, looking around)
 
     // module (rebuild when it changes)
     const sig = `${role}|${model.round}|${model.cur}|${blind ? `${model.game.x}|${model.game.e}|${model.game.p}` : ''}`;
@@ -474,6 +604,15 @@ export function createWorld(host, opts) {
       bomb.visible = !lost;
       bomb.rotation.z = mood === 'hit' ? Math.sin(t * 50) * 0.02 * Math.exp(-since * 5) : 0;
     } else { sparkLight.intensity = 0; }
+    // the Mute's world: reading, he sees only the book; with the book down he sees the back of the bomb, the Blind and the Deaf
+    if (mute) {
+      bomb.visible = !lost && kk > 0.3;
+      chars.blind.g.visible = chars.deaf.g.visible = kk > 0.3;
+      bookRoot.visible = kk < 0.5; deskRoot.visible = kk > 0.3;
+      fpRoot.visible = kk > 0.6;
+      if (css) { css.domElement.style.opacity = String(clamp01(1 - kk * 2.4)); css.domElement.style.display = kk >= 0.45 ? 'none' : ''; }
+      bookEl.style.pointerEvents = kk < 0.05 ? 'auto' : 'none';
+    } else if (blind) bomb.visible = false;
 
     // the crew
     Object.values(chars).forEach((c) => {
@@ -492,6 +631,45 @@ export function createWorld(host, opts) {
       tmpC.copy(c.color); if (lost) tmpC.multiplyScalar(0.35); c.bm.color.lerp(tmpC, 0.2);
     });
 
+    // the poses: the Deaf sees the Mute's (book in his hands or on the desk, his hands, his head); the Mute sees the Deaf's head
+    {
+      const kp = 1 - Math.exp(-dt * 9);
+      const smooth = (c, y, pp) => { c.look.y += (y - c.look.y) * kp; c.look.p += (pp - c.look.p) * kp; c.head.rotation.set(c.look.p, c.look.y, 0, 'YXZ'); };
+      if (deaf) {
+        const P = remote.mute || {}; const down = !!P.d; const hv = P.h || [0, 0]; const c = chars.mute;
+        miniRoot.visible = !down;
+        smooth(c, down ? P.y || 0 : 0, down ? P.p || 0 : 0.42);
+        ['l', 'r'].forEach((sd, i) => {
+          const v = hv[i] | 0; const tgt = !down ? HAND_POS.hold[sd] : raised(v) ? HAND_POS.show[sd] : HAND_POS.rest[sd];
+          tv.fromArray(tgt); if (down && raised(v)) tv.y += Math.sin(t * 5 + i) * 0.03;
+          c.hp[sd].lerp(tv, kp);
+          const h = c.hands[sd]; h.group.position.copy(c.hp[sd]); h.set(down ? v : 0, kp);
+          c.arms[sd].update(c.shoulder[sd], c.hp[sd]);
+        });
+        const n = down ? countOf(hv[0] | 0, hv[1] | 0) : null;
+        badge.visible = n !== null;
+        if (n !== null) { badge.material.map = badgeMap(n); badge.material.needsUpdate = true; badge.scale.setScalar(0.72); badge.position.set(MUTE_AT.x - 1.3, DESK_Y + 1.55, MUTE_AT.z + 0.4); }
+      } else badge.visible = false;
+      if (mute) {
+        const P = remote.deaf || {};
+        smooth(chars.deaf, P.y || 0, P.p || 0);
+        const hs = 1 - Math.exp(-dt * 14);
+        ['l', 'r'].forEach((sd, i) => {
+          const v = myHands[i]; const r = raised(v) ? 1 : 0; const h = fp[sd];
+          h.set(v, hs); const g = h.group;
+          g.position.x += ((sd === 'l' ? -1 : 1) * fpLay.x - g.position.x) * hs;
+          g.position.y += ((r ? fpLay.hi : fpLay.lo) - g.position.y) * hs; g.scale.setScalar(fpLay.sc);
+        });
+      }
+      // my own pose goes to the others (at most 8 times a second, and only when it changed)
+      if (mute || deaf) {
+        const q = (x) => Math.round(x * 25) / 25;
+        const pose = mute ? { d: desk.down ? 1 : 0, h: [myHands[0], myHands[1]], y: q(look.y), p: q(look.p) } : { y: q(orbit.yaw * 1.2), p: q(orbit.pitch * 1.6) };
+        const sj = JSON.stringify(pose);
+        if (sj !== sentPose && performance.now() - sentAt > 125) { sentPose = sj; sentAt = performance.now(); onPose(role, pose); }
+      }
+    }
+
     // light, flash, shake
     flash *= Math.exp(-dt * 4.5); shake *= Math.exp(-dt * 5);
     alarm.intensity = flash * 50; happy.intensity = won ? 16 + Math.sin(t * 6) * 4 : 0;
@@ -499,16 +677,27 @@ export function createWorld(host, opts) {
     if (blind) scene.background.r = Math.min(0.35, flash * 0.3);          // the Blind's black screen blushes red for a moment on a mistake
     else if (flash > 0.02) scene.background.lerp(tmpC.set(0x4a1218), Math.min(0.5, flash * 0.4));
 
-    // camera: ease to the role's seat, then a little breathing / shake / the Deaf's drag
-    const rig = RIG[role];
-    if (camFrom && camT < 1) { camT = Math.min(1, camT + dt / 0.7); const k = ease(camT); camPos.lerpVectors(camFrom.pos, rig.pos, k); camLook.lerpVectors(camFrom.look, rig.look, k); }
-    else { camPos.copy(rig.pos); camLook.copy(rig.look); }
-    if (!orbit.dragging) { orbit.yaw *= Math.exp(-dt * 2.5); orbit.pitch *= Math.exp(-dt * 2.5); }
-    const off = camPos.clone().sub(camLook);
-    off.applyAxisAngle(new THREE.Vector3(0, 1, 0), orbit.yaw); off.y += orbit.pitch * off.length() * 0.6;
-    camera.position.copy(camLook).add(off);
-    camera.position.x += (Math.random() - 0.5) * shake * 0.3; camera.position.y += (Math.random() - 0.5) * shake * 0.22 + (role === 'deaf' ? Math.sin(t * 0.5) * 0.03 : 0);
-    camera.lookAt(camLook);
+    // camera: ease to the role's seat, then a little breathing / shake / the Deaf's drag. The Mute's camera is his eyes: on the book, or up
+    // on the room with the book down (his head turns by dragging)
+    if (mute) {
+      const cp = Math.cos(-look.p);
+      deskLookPt.set(Math.sin(look.y) * cp, Math.sin(-look.p), Math.cos(look.y) * cp).multiplyScalar(5).add(EYE);
+      camera.position.lerpVectors(muteRig.pos, EYE, kk); camLook.lerpVectors(muteRig.look, deskLookPt, kk);
+      const fv = MUTE_FOV + (muteRig.fov - MUTE_FOV) * kk;
+      if (Math.abs(fv - camera.fov) > 0.01) { camera.fov = fv; camera.updateProjectionMatrix(); }
+      camera.position.x += (Math.random() - 0.5) * shake * 0.12; camera.position.y += (Math.random() - 0.5) * shake * 0.1;
+      camera.lookAt(camLook);
+    } else {
+      const rig = RIG[role];
+      if (camFrom && camT < 1) { camT = Math.min(1, camT + dt / 0.7); const k = ease(camT); camPos.lerpVectors(camFrom.pos, rig.pos, k); camLook.lerpVectors(camFrom.look, rig.look, k); }
+      else { camPos.copy(rig.pos); camLook.copy(rig.look); }
+      if (!orbit.dragging) { orbit.yaw *= Math.exp(-dt * 2.5); orbit.pitch *= Math.exp(-dt * 2.5); }
+      const off = camPos.clone().sub(camLook);
+      off.applyAxisAngle(new THREE.Vector3(0, 1, 0), orbit.yaw); off.y += orbit.pitch * off.length() * 0.6;
+      camera.position.copy(camLook).add(off);
+      camera.position.x += (Math.random() - 0.5) * shake * 0.3; camera.position.y += (Math.random() - 0.5) * shake * 0.22 + (role === 'deaf' ? Math.sin(t * 0.5) * 0.03 : 0);
+      camera.lookAt(camLook);
+    }
 
     if (boomAt) {
       const e = (performance.now() - boomAt) / 1000;
@@ -524,8 +713,14 @@ export function createWorld(host, opts) {
     if (document.hidden || ts - last < 16) return;
     const dt = Math.min(0.1, (ts - last) / 1000); last = ts;
     step(dt, ts / 1000);
-    renderer.render(scene, camera);
-    if (css && role === 'mute') {
+    camera.layers.set(0); renderer.render(scene, camera);
+    if (fpRoot.visible && role === 'mute') {                 // his own hands, over everything
+      const bg = scene.background; scene.background = null; renderer.autoClear = false; renderer.clearDepth();
+      camera.layers.set(1); renderer.render(scene, camera);
+      camera.layers.set(0); renderer.autoClear = true; scene.background = bg;
+    }
+    if (css && role === 'mute') spreadCtl.ready();
+    if (css && role === 'mute' && desk.k < 0.45) {
       cssCam.position.copy(camera.position).multiplyScalar(K); cssCam.quaternion.copy(camera.quaternion);
       cssCam.fov = camera.fov; cssCam.aspect = camera.aspect; cssCam.updateProjectionMatrix(); cssCam.updateMatrixWorld();
       css.render(css.scene, cssCam);
@@ -546,13 +741,44 @@ export function createWorld(host, opts) {
     return { x: r.left + ((c.x + 1) / 2) * r.width, y: r.top + ((1 - c.y) / 2) * r.height };
   }
 
+  // test hooks: where a finger / the book on the desk is on the screen
+  function toScreen(obj) {
+    obj.updateWorldMatrix(true, false);
+    const c = new THREE.Box3().setFromObject(obj).getCenter(new THREE.Vector3()).project(camera); const r = canvas.getBoundingClientRect();
+    return { x: r.left + ((c.x + 1) / 2) * r.width, y: r.top + ((1 - c.y) / 2) * r.height };
+  }
+  // a point of the screen where a long press picks the book up (on the book, not on a finger)
+  function deskBookPoint() {
+    const r = canvas.getBoundingClientRect();
+    for (let j = 0; j < 30; j++) for (let i = 0; i < 30; i++) {
+      const x = r.left + ((i + 0.5) / 30) * r.width; const y = r.top + ((j + 0.5) / 30) * r.height; const h = fpHit({ clientX: x, clientY: y });
+      if (h && h.kind === 'book') return { x, y };
+    }
+    return null;
+  }
+  const fingerHit = (hand, f) => fpHits.find((m) => m.userData.hand === hand && m.userData.finger === f);
+
   return {
     canvas, bookEl,
     update(m) {
       model = m; at = Date.now();
       if (m.role !== role) { role = m.role; applyRole(); }
+      if (role === 'mute' && m.bomb) { spreadCtl.setManual(m.bomb, m.round); spreadCtl.setStrikes(m.strikes); }
     },
-    stats: () => ({ crew: Object.fromEntries(Object.entries(chars).filter(([, c]) => c.g.visible).map(([r, c]) => [r, [+c.g.position.x.toFixed(2), +c.g.position.z.toFixed(2)]])), bombZ: BOMB_AT.z, cam: [camera.position.x, camera.position.y, camera.position.z].map((v) => +v.toFixed(2)), fov: +camera.fov.toFixed(1), orbit: [+orbit.yaw.toFixed(3), +orbit.pitch.toFixed(3)], frames, mood, role, hits: hits.length, mode: cur.b ? 'module' : 'none', veil: +fogVeil.material.opacity.toFixed(2), book: !!(css && role === 'mute') }),
+    // what the others are doing ({ mute: {d, h, y, p}, deaf: {y, p} }, from the shared state)
+    setPoses(p) { remote = { mute: (p && p.mute) || null, deaf: (p && p.deaf) || null }; },
+    stats: () => ({
+      crew: Object.fromEntries(Object.entries(chars).filter(([, c]) => c.g.visible).map(([r, c]) => [r, [+c.g.position.x.toFixed(2), +c.g.position.z.toFixed(2)]])), bombZ: BOMB_AT.z,
+      cam: [camera.position.x, camera.position.y, camera.position.z].map((v) => +v.toFixed(2)), fov: +camera.fov.toFixed(1), orbit: [+orbit.yaw.toFixed(3), +orbit.pitch.toFixed(3)],
+      frames, mood, role, hits: hits.length, mode: cur.b ? 'module' : 'none', veil: +fogVeil.material.opacity.toFixed(2), book: !!(css && role === 'mute'),
+      desk: { down: desk.down, k: +desk.k.toFixed(2) }, hands: myHands.slice(), look: [+look.y.toFixed(2), +look.p.toFixed(2)], count: countOf(myHands[0], myHands[1]),
+      remote, bombVisible: bomb.visible, blindVisible: chars.blind.g.visible, deafVisible: chars.deaf.g.visible, muteVisible: chars.mute.g.visible, bookVisible: bookRoot.visible, deskBookVisible: deskRoot.visible, miniVisible: miniRoot.visible,
+      muteHead: [+chars.mute.look.y.toFixed(2), +chars.mute.look.p.toFixed(2)], deafHead: [+chars.deaf.look.y.toFixed(2), +chars.deaf.look.p.toFixed(2)],
+      muteHands: ['l', 'r'].map((sd) => +chars.mute.hp[sd].y.toFixed(2)), badge: badge.visible,
+    }),
+    spread: spreadCtl,
+    setDown, setHands(l, r) { myHands = [l | 0, r | 0]; }, sign: showSign, look: (y, p) => { look.y = y; look.p = p; },
+    tapFinger: (hand, f) => toggleFinger(hand, f), fingerScreen: (hand, f) => { const h = fingerHit(hand, f); return h ? toScreen(h) : null; }, deskBookScreen: () => toScreen(deskHits[0]), deskBookPoint,
     screenOf,
     // where the book is on the screen: from the 3D scene (cover mesh) and from the page element (the tests compare them)
     bookRects() {
@@ -561,12 +787,13 @@ export function createWorld(host, opts) {
       return { scene: { x: r.left + ((c.x + 1) / 2) * r.width, y: r.top + ((1 - c.y) / 2) * r.height }, page: { x: b.left + b.width / 2, y: b.top + b.height / 2, w: b.width, h: b.height }, host: { l: r.left, t: r.top, w: r.width, h: r.height }, K, pageW, pageH };
     },
     destroy() {
-      disposed = true; cancelAnimationFrame(raf); clearTimeout(press.timer); onReveal(null);
+      disposed = true; cancelAnimationFrame(raf); clearTimeout(press.timer); if (mp) clearTimeout(mp.timer); onReveal(null);
       if (ro) ro.disconnect(); else window.removeEventListener('resize', fit);
-      disposeModule(); kit.dispose(); if (cntMat.map) cntMat.map.dispose();
-      [sparks, burst].forEach((p) => { p.geo.dispose(); p.mat.dispose(); });
+      disposeModule(); kit.dispose(); deskKit.dispose(); miniKit.dispose(); if (bookKit) bookKit.dispose(); spreadCtl.destroy(); if (cntMat.map) cntMat.map.dispose();
+      Object.values(badgeTex).forEach((x) => x && x.dispose && x.dispose());
+      [sparks, burst].forEach((q) => { q.geo.dispose(); q.mat.dispose(); });
       try { renderer.dispose(); renderer.forceContextLoss(); } catch (e) { /* ignore */ }
-      canvas.remove(); if (css) css.domElement.remove();
+      canvas.remove(); hud.remove(); if (css) css.domElement.remove();
     },
   };
 }

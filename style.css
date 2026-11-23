@@ -579,19 +579,82 @@ body.mute .w3host { flex: 1 1 0; min-height: 0; height: auto; }
 }
 body.mute .sc-tag { top: 5px; font-size: 12px; }
 .sc-tag svg { flex: none; }
-/* the Mute's manual lying on his desk (a real page of the 3D scene, so it is laid out at a fixed pixel size by world3d.js).
-   It is a PAPER page: warm white with dark ink, whatever the theme, so it reads as the page of a printed book. */
+/* the Mute's manual in the 3D world: a real open book, two PAPER pages side by side (warm white with dark ink, whatever the theme).
+   It is laid out at a fixed pixel size by world3d.js and cut into pages by bookspread.js; the font size follows the page width. */
 html[dir="rtl"] .bk3d { direction: rtl; }
 .bk3d {
+  pointer-events: auto;
   --surface: #f4ecd6; --surface2: #eadfc2; --text: #2b2418; --text2: #6a5d44; --line: #cdbf9c;
-  position: relative; display: flex; flex-direction: column; text-align: start; border-radius: 3px; overflow: hidden; color: var(--text);
-  background: var(--surface); -webkit-user-select: none; user-select: none;
+  position: relative; color: var(--text); touch-action: none; -webkit-user-select: none; user-select: none; text-align: start;
 }
-.bk3d::after {                                    /* the shadow of the gutter on the page */
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(to right, rgba(60, 40, 15, .38), rgba(60, 40, 15, .12) 7%, transparent 16%);
+.bk3d .bk-sp { position: absolute; inset: 0; transform-style: preserve-3d; }
+.bk3d .bk-slot { position: absolute; top: 0; bottom: 0; left: 0; width: 50%; }
+.bk3d .bk-slot.right { left: 50%; }
+.bk3d .bk-leaf { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 5; }
+.bk3d .lf { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.bk3d .lf.b { transform: rotateY(180deg); }
+.bk3d .pg { position: absolute; inset: 0; box-sizing: border-box; padding: 13px 12px 32px; background-color: var(--surface); color: var(--text); font-size: var(--bk-fs, 13px);
+  display: flex; flex-direction: column; overflow: hidden; }
+.bk3d .pg.measure { visibility: hidden; pointer-events: none; inset: auto; top: 0; left: 0; }
+.bk3d .pg.l { background-image: linear-gradient(to left, rgba(60, 40, 15, .36), rgba(60, 40, 15, .10) 9%, transparent 22%); border-radius: 3px 0 0 3px; }
+.bk3d .pg.r { background-image: linear-gradient(to right, rgba(60, 40, 15, .36), rgba(60, 40, 15, .10) 9%, transparent 22%); border-radius: 0 3px 3px 0; }
+.bk3d .pg-in { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: .6em; overflow: hidden; }
+.bk3d .pg-in > * { flex: none; }
+.bk3d .pg-no { position: absolute; bottom: 9px; font-weight: 800; font-size: .95em; color: var(--text2); font-variant-numeric: tabular-nums; }
+.bk3d .pg.r .pg-no { right: 14px; }
+.bk3d .pg.l .pg-no { left: 14px; }
+.bk3d .bk-corner { position: absolute; bottom: 0; width: 46px; height: 46px; border: 0; padding: 0; background: transparent; cursor: pointer; z-index: 3; }
+.bk3d .bk-slot.right .bk-corner { right: 0; }
+.bk3d .bk-slot:not(.right) .bk-corner { left: 0; }
+.bk3d .bk-corner::after { content: ""; position: absolute; bottom: 0; width: 20px; height: 20px; background: linear-gradient(135deg, rgba(60, 40, 15, .22), rgba(60, 40, 15, 0) 55%); }
+.bk3d .bk-slot.right .bk-corner::after { right: 0; transform: scaleX(-1); }
+.bk3d .bk-slot:not(.right) .bk-corner::after { left: 0; }
+.bk3d .bk-head { padding-bottom: .4em; border-bottom: 2px solid var(--accent); }
+.bk3d .bk-head h3 { font-size: 1.5em; line-height: 1.3; color: var(--accent-text); }
+.bk3d .bk-cont { font-size: .85em; color: var(--text2); border-bottom: 1px solid var(--line); padding-bottom: .3em; }
+.bk3d .lead { font-size: 1em; line-height: 1.75; }
+.bk3d .lead.small { font-size: .9em; color: var(--text2); line-height: 1.6; }
+.bk3d h4 { font-size: 1.05em; color: var(--accent-text); }
+.bk3d .rule { font-size: .95em; padding: .55em .6em; gap: .6em; line-height: 1.7; border-radius: 10px; }
+.bk3d .rbadge { flex: none; }
+.bk3d .optable.one { gap: 0; }
+.bk3d .optable div { padding: .5em .7em; border-radius: 10px; font-size: 1em; }
+.bk3d .num { font-size: 1.35em; min-width: 1.6em; }
+.bk3d .tag { font-size: .85em; padding: .1em .8em; }
+.bk3d .toc { gap: .5em; }
+.bk3d .toc-r { padding: .5em .6em; gap: .6em; border-radius: 10px; font-size: 1em; }
+.bk3d .toc-n { width: 2em; height: 2em; border-radius: 8px; font-size: .95em; }
+.bk3d .toc-t b { font-size: 1.05em; }
+.bk3d .toc-t small { font-size: .78em; }
+.bk3d .rank span { width: 2.3em; height: 2.8em; font-size: 1.35em; border-radius: 10px; }
+.bk3d .ltable { border-radius: 10px; padding: .5em; gap: .45em; }
+.bk3d .lt-rows { display: grid; grid-template-columns: 1fr 1fr; gap: .4em; }
+.bk3d .lt-h { font-size: .9em; }
+.bk3d .lc, .bk3d .lb { width: 1.9em; height: 1.9em; font-size: .9em; }
+.bk3d .lt-w { width: .7em; }
+.bk3d .legend { font-size: .85em; gap: .4em 1em; }
+.bk3d[data-strikes="0"] .ltable[data-s="0"], .bk3d[data-strikes="1"] .ltable[data-s="1"], .bk3d[data-strikes="2"] .ltable[data-s="2"] { opacity: 1; border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.bk3d[data-strikes="0"] .ltable[data-s="0"] em, .bk3d[data-strikes="1"] .ltable[data-s="1"] em, .bk3d[data-strikes="2"] .ltable[data-s="2"] em { display: block; }
+
+/* the Mute's little helpers over the 3D world: a hint that fades away, and the sign buttons when the book is down */
+.w3host[data-tiny="1"] .sc-tag { display: none; }
+.w3hud { position: absolute; inset: 0; z-index: 4; pointer-events: none; direction: rtl; }
+html[lang="en"] .w3hud { direction: ltr; }
+.w3hint {
+  position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); max-width: calc(100% - 16px); width: max-content; text-align: center;
+  padding: 5px 12px; border-radius: 14px; background: rgba(10, 12, 20, .78); color: #e8ecff; font-size: 12px; font-weight: 700; line-height: 1.5;
+  border: 1px solid rgba(255, 255, 255, .14); animation: w3fade 9s ease forwards; pointer-events: none;
 }
-.bk3d .book { flex: 1 1 auto; min-height: 0; box-shadow: none; border: 0; border-radius: 0; background: transparent; }
-.bk3d .bk-tabs { background: rgba(120, 90, 40, .10); }
-.bk3d .bk-tab.on { background: var(--surface); }
-.bk3d .bk-page { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.w3hud[data-mode="desk"] .w3hint { animation-duration: 12s; bottom: auto; top: 80px; }
+@keyframes w3fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+.w3signs { position: absolute; top: 34px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; pointer-events: auto; direction: ltr; }
+.w3signs[hidden] { display: none; }
+.w3signs button {
+  width: 38px; height: 38px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .22); background: rgba(10, 12, 20, .72); color: #fff; font-size: 19px;
+  line-height: 1; padding: 0; cursor: pointer; backdrop-filter: blur(4px); touch-action: manipulation;
+}
+.w3signs button:active { background: color-mix(in srgb, var(--c-mute, #4fd1c1) 50%, rgba(10, 12, 20, .8)); }
+@media (prefers-reduced-motion: reduce) { .w3hint { animation: none; } }
+.bk3d.tiny .pg { padding: 9px 8px 24px; }
+.bk3d.tiny .pg-no { bottom: 6px; }
+.bk3d.tiny .rule { padding: .4em .45em; gap: .45em; }
