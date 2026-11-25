@@ -2,7 +2,7 @@
 // Bump CACHE whenever you deploy a new version so phones pick up the update.
 // js/world3d.js (+ world-art.js, world-modules.js, world-book.js) and vendor/ are NOT listed: only phones that pick the 3D view download them (once); the
 // fetch handler below then keeps them cached like everything else.
-const CACHE = 'fuse-v13';
+const CACHE = 'fuse-v14';
 const ASSETS = [
   './', 'index.html', 'style.css', 'firebase-config.js', 'rtc-config.js', 'manifest.webmanifest',
   'fonts/cairo-arabic-wght-normal.woff2', 'fonts/cairo-latin-wght-normal.woff2',
@@ -11,7 +11,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache:'reload' = straight from the server, never from the browser's own HTTP cache (GitHub Pages keeps files for 10 minutes), so a new version never installs old files
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {

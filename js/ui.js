@@ -90,11 +90,14 @@ export function avatar(role, size = 56) {
 // ---------- gestures ----------
 export const SIGNALS = { yes: '✅', no: '❌', ask: '❓', stop: '✋', again: '🔁' };
 export function gestureChip(g, isNew, key) {
-  const [k, v] = g.split(':');
+  const [k, v = ''] = String(g).split(':');
   const cls = `gchip${isNew ? ' new' : ''}${key ? ' del' : ''}`;
   let style = ''; let inner = '';
-  if (k === 'c') { style = ` style="background:${COLOR_HEX[v]};color:${v === 'white' || v === 'yellow' ? '#111' : '#fff'}" title="${colorName(v)}"`; }
-  else if (k === 'x') inner = SIGNALS[v] || '?';
+  if (k === 'c') {
+    // only the known colour names are drawn (a made-up value would otherwise land inside an attribute)
+    if (Object.prototype.hasOwnProperty.call(COLOR_HEX, v)) style = ` style="background:${COLOR_HEX[v]};color:${v === 'white' || v === 'yellow' ? '#111' : '#fff'}" title="${esc(colorName(v))}"`;
+    else inner = '?';
+  } else if (k === 'x') inner = Object.prototype.hasOwnProperty.call(SIGNALS, v) ? SIGNALS[v] : '?';
   else inner = esc(v);
   // the Mute's own chips are buttons: a tap removes that signal (the others see a "signals changed" notice)
   if (key) return `<button class="${cls}"${style} data-act="gdel" data-k="${esc(key)}" aria-label="${t('gDelOne')}">${inner}<i class="gx" aria-hidden="true">×</i></button>`;

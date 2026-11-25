@@ -143,7 +143,7 @@ export function lobbyHTML(room, code, uid, soloLocal, voice, canInvite, view, no
     const r = mode === 'pick' ? roleOf(id) : null;
     return `<div class="slot">${avatar(r || 'none', 44)}
       <span class="nm">${esc(p.name)}${r ? `<small style="color:${ROLE_COLOR[r]}">${roleName(r)}</small>` : ''}</span>
-      ${p.voice ? `<span class="vdot" title="voice">${icon('mic', { size: 16 })}</span>` : ''}${p.voice ? `<span class="vu mini" data-vu="${id === uid ? 'me' : id}" aria-hidden="true"><i></i></span>` : ''}${id === room.host ? `<span class="badge">${t('host')}</span>` : ''}${id === uid ? `<span class="badge ok">${t('you')}</span>` : ''}
+      ${p.voice ? `<span class="vdot" title="voice">${icon('mic', { size: 16 })}</span>` : ''}${p.voice ? `<span class="vu mini" data-vu="${id === uid ? 'me' : esc(id)}" aria-hidden="true"><i></i></span>` : ''}${id === room.host ? `<span class="badge">${t('host')}</span>` : ''}${id === uid ? `<span class="badge ok">${t('you')}</span>` : ''}
       <i class="dot ${p.online === false ? 'off' : ''}"></i></div>`;
   }).join('');
 
@@ -251,8 +251,12 @@ export function gestHTML(role, list, o = {}) {
 export function logHTML(list, players) {
   if (!list.length) return `<div class="log"><div class="empty">${t('noChat')}</div></div>`;
   return `<div class="log" id="logbox">${list.slice(-30).map((m) =>
-    `<div class="msg">${avatar(m.role, 26)}<div><span class="who">${esc((players[m.from] && players[m.from].name) || '?')} · ${roleName(m.role)}</span>${esc(m.text)}</div></div>`).join('')}</div>`;
+    `<div class="msg">${avatar(m.role, 26)}<div><span class="who">${esc((players[m.from] && players[m.from].name) || '?')} · ${esc(roleName(m.role))}</span>${esc(m.text)}</div></div>`).join('')}</div>`;
 }
+// a player who joined while the round was being dealt has no role: he just waits (the room returns to the lobby after the round)
+export const waitRoundHTML = () => `<div class="home boot"><div class="topline">${leaveBtn()}</div>
+  <div class="spinner" role="status" aria-label="${t('waitRound')}"></div>
+  <p class="muted" style="text-align:center">${t('waitRound')}</p></div>`;
 export const deafHTML = () => `<div class="log"><div class="deafbox">${t('cantHear')}</div></div>`;
 export const muteHTML = () => `<div class="deafbox">${t('muteNote')}</div>`;
 export const speakHTML = () => `<div class="deafbox speakhint">${icon('mic', { size: 18 })}<span>${t('speakHint')}</span></div>`;

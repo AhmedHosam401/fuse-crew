@@ -250,6 +250,7 @@ function renderBoot() {
   app.innerHTML = V.bootHTML();
 }
 function renderHome() {
+  if (S.swNew) { location.reload(); return; }
   S.skel = 'home';
   app.innerHTML = V.homeHTML({
     name: S.name, code: S.codeIn, err: S.err, mode: isFirebaseConfigured() ? 'firebase' : 'demo', account: accountView(),
@@ -274,8 +275,13 @@ function region(id, html, key) {
 function renderPlay() {
   const c = cur();
   if (!c) return;
-  if (S.skel !== 'play') { app.innerHTML = V.playSkeleton(effView()); S.skel = 'play'; S.regions = {}; worldStop(); requestWake(); }
   const roles = myRoles();
+  if (roles.length && S.skel !== 'play') { app.innerHTML = V.playSkeleton(effView()); S.skel = 'play'; S.regions = {}; worldStop(); requestWake(); }
+  if (!roles.length) {
+    // somebody who walked in while the round was being dealt holds no role: he waits for the next round instead of breaking the screen
+    if (S.skel !== 'wait') { worldStop(); app.innerHTML = V.waitRoundHTML(); S.skel = 'wait'; S.regions = {}; }
+    return;
+  }
   if (!roles.includes(S.role)) S.role = roles[0];
   const role = S.role;
   const players = S.room.players || {};
@@ -463,12 +469,53 @@ async function enter(code) {
   S.unsub = S.net.on(`rooms/${code}`, onRoom);
 }
 
+// Everything that comes from the database is data from other phones: it is cut down to the shapes the game itself writes
+// before anything draws it, so a half-written or hand-made value can neither break the screen nor smuggle markup into it.
+const asInt = (v, lo, hi, d) => { const n = Math.floor(+v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+const asNum = (v, lim) => { const n = +v; return Number.isFinite(n) ? Math.max(-lim, Math.min(lim, n)) : 0; };
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+function cleanGame(g) {
+  const out = { ...g };
+  out.status = ['playing', 'won', 'lost'].includes(g.status) ? g.status : 'playing';
+  if (g.reason !== undefined) out.reason = g.reason === 'strikes' ? 'strikes' : 'time';
+  out.strikes = asInt(g.strikes, 0, 9, 0);
+  if (g.maxStrikes !== undefined) out.maxStrikes = asInt(g.maxStrikes, 1, 9, E.MAX_STRIKES);
+  out.cur = asInt(g.cur, 0, 99, 0);
+  out.p = asInt(g.p, 0, 99, 0);
+  return out;
+}
+function cleanPoses(p) {
+  if (!isObj(p)) return null;
+  const out = {};
+  if (isObj(p.mute)) out.mute = { d: p.mute.d ? 1 : 0, h: [asInt(Array.isArray(p.mute.h) && p.mute.h[0], 0, 127, 0), asInt(Array.isArray(p.mute.h) && p.mute.h[1], 0, 127, 0)], y: asNum(p.mute.y, 4), p: asNum(p.mute.p, 4) };
+  if (isObj(p.deaf)) out.deaf = { y: asNum(p.deaf.y, 4), p: asNum(p.deaf.p, 4) };
+  return out;
+}
 // players without a name are leftovers (a late "disconnect" write for someone who already left): never show or count them
 function cleanRoom(room) {
-  if (!room) return room;
+  if (!room || typeof room !== 'object') return null;
   const players = {};
-  for (const [id, p] of Object.entries(room.players || {})) if (p && p.name) players[id] = p;
-  return { ...room, players };
+  for (const [id, p] of Object.entries(room.players || {})) if (p && p.name && typeof p.name === 'string') players[id] = p;
+  const out = { ...room, players };
+  if (out.level != null) out.level = asInt(out.level, 1, E.LEVEL_COUNT, 1);
+  if (out.unlocked != null) out.unlocked = asInt(out.unlocked, 1, E.LEVEL_COUNT, 1);
+  if (out.roundNo != null) out.roundNo = asInt(out.roundNo, 0, 1e9, 0);
+  if (out.pose != null) out.pose = cleanPoses(out.pose);
+  const r = room.round;
+  if (r != null) {
+    // a round that is not whole (no seed, no deal, no game) is treated as "no round": the room just shows its lobby
+    out.round = isObj(r) && Number.isFinite(+r.seed) && isObj(r.roles) && isObj(r.game)
+      ? { ...r, seed: +r.seed, level: asInt(r.level, 1, E.LEVEL_COUNT, 1), id: asInt(r.id, 0, 1e9, 0), game: cleanGame(r.game) } : null;
+  }
+  if (isObj(out.gestures)) {
+    const g = {}; for (const [k, v] of Object.entries(out.gestures)) if (isObj(v) && typeof v.g === 'string') g[k] = { ...v, g: v.g, t: asNum(v.t, 1e15) };
+    out.gestures = g;
+  }
+  if (isObj(out.chat)) {
+    const c = {}; for (const [k, v] of Object.entries(out.chat)) if (isObj(v) && typeof v.text === 'string' && E.ROLES.includes(v.role)) c[k] = { ...v, t: asNum(v.t, 1e15) };
+    out.chat = c;
+  }
+  return out;
 }
 
 function onRoom(raw) {
@@ -1149,5 +1196,9 @@ if (location.search.includes('debug')) window.__fuse = { S, E, Sc, cur, voice: (
 boot();
 
 if ('serviceWorker' in navigator) {
+  const hadSW = !!navigator.serviceWorker.controller;
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  // A new version took over: the page in memory is still the old one (and would fetch new lazy files such as the 3D world
+  // against old code). It reloads from the home screen only - never in the middle of a lobby or a round (a refresh restores the room anyway).
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadSW) return; S.swNew = true; if (S.screen === 'home') location.reload(); });
 }
