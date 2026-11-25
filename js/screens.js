@@ -210,11 +210,12 @@ export function topHTML(game, round, bomb, now, shaking, role) {
     ${blind ? '' : `<div class="bar"><b id="barfill" style="width:${pct}%"></b></div>`}</div>`;
 }
 
-export function roleHTML(myRoles, active) {
+export function roleHTML(myRoles, active, open) {
   const c = ROLE_COLOR[active];
   const tabs = myRoles.length > 1
     ? `<div class="tabs">${myRoles.map((r) => `<button class="tab${r === active ? ' on' : ''}" style="--c:${ROLE_COLOR[r]}" data-act="role" data-v="${r}">${avatar(r, 26)}${roleName(r)}</button>`).join('')}</div>` : '';
-  return `${tabs}<div class="rolehead" style="--c:${c}">${avatar(active, 52)}<div><div class="rn">${roleName(active)}</div><div class="rd">${t('desc_' + active)}</div></div></div>`;
+  // one line (face + role name); the round "?" opens what the role does - the instructions are always one tap away
+  return `${tabs}<div class="rolehead${open ? ' open' : ''}" style="--c:${c}">${avatar(active, 34)}<div><div class="rn">${roleName(active)}</div><div class="rd">${t('desc_' + active)}</div></div><button class="hb" data-act="rolehelp" aria-expanded="${open ? 'true' : 'false'}" aria-label="${t('roleHelp')}" title="${t('roleHelp')}">${t('helpMark')}</button></div>`;
 }
 
 export function mainHTML(role, bomb, game, mpage, flip) {

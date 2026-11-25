@@ -68,7 +68,7 @@ const SEE_SCALE = 1.12; const FEEL_SCALE = 0.8;
 
 // where the camera sits for each role (the fov is worked out from the size of the screen; the Mute's is worked out in fit())
 const RIG = {
-  deaf: { pos: new THREE.Vector3(0.1, 3.3, 4.9), look: new THREE.Vector3(0.15, 1.75, -0.2), fitW: 3.9 },
+  deaf: { pos: new THREE.Vector3(0.15, 4.35, 4.9), look: new THREE.Vector3(0.1, 1.45, -0.2), fitW: 3.9 },     // a metre higher: the Blind's head no longer covers the bottom of the bomb
   blind: { pos: PANEL_WORLD.clone().addScaledVector(NRM, 3.9), look: PANEL_WORLD.clone(), fitW: 2.72 },
   mute: { pos: new THREE.Vector3(0, 9, 8), look: new THREE.Vector3(0, 0.5, 1), fitW: 0 },      // (the Mute's is worked out in fit())
 };

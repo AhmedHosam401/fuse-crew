@@ -293,7 +293,7 @@ function renderPlay() {
   const shaking = Date.now() < S.shakeUntil;
   region('top', V.topHTML(c.game, c.r, c.bomb, c.now, shaking, role), `${c.r.id}|${c.game.strikes}|${c.game.cur}|${shaking}|${role}`);
   updateClock(c);
-  region('role', V.roleHTML(roles, role));
+  region('role', V.roleHTML(roles, role, !!S.roleHelp));
   // the Mute's book is redrawn only when the page / the mistakes / the round change, so a page flip plays once
   if (effView() === '3d') renderWorldHost(c, role);
   else region('main', V.mainHTML(role, c.bomb, c.game, S.mpage, S.flip), role === 'mute' ? `book|${c.r.id}|${S.mpage}|${Math.min(c.game.strikes, 2)}` : undefined);
@@ -983,6 +983,7 @@ document.addEventListener('click', (e) => {
     case 'level': setLevel(+d.v); break;
     case 'next': nextRound(); break;
     case 'toroom': backToRoom(); break;
+    case 'rolehelp': S.roleHelp = !S.roleHelp; render(); break;
     case 'role': S.role = d.v; S.regions = {}; S.flip = null; saveUi(); render(); break;
     case 'mflip': {
       const c = cur(); if (!c || !d.v) break;
