@@ -2,7 +2,7 @@
 // Bump CACHE whenever you deploy a new version so phones pick up the update.
 // js/world3d.js (+ world-art.js, world-modules.js, world-book.js) and vendor/ are NOT listed: only phones that pick the 3D view download them (once); the
 // fetch handler below then keeps them cached like everything else.
-const CACHE = 'fuse-v15';
+const CACHE = 'fuse-v16';
 const ASSETS = [
   './', 'index.html', 'style.css', 'firebase-config.js', 'rtc-config.js', 'manifest.webmanifest',
   'fonts/cairo-arabic-wght-normal.woff2', 'fonts/cairo-latin-wght-normal.woff2',

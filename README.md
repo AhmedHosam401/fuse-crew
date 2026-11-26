@@ -135,7 +135,7 @@ python3 -m http.server 8000
 
 ## 5) بعد أي تعديل
 
-غيّر `CACHE = 'fuse-v15'` في `sw.js` إلى `fuse-v16` وهكذا، عشان التليفونات تاخد النسخة الجديدة.
+غيّر `CACHE = 'fuse-v16'` في `sw.js` إلى `fuse-v17` وهكذا، عشان التليفونات تاخد النسخة الجديدة.
 
 ## ربط Claude بـ GitHub و Firebase
 

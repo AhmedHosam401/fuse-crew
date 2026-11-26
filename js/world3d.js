@@ -66,10 +66,18 @@ const PANEL_WORLD = BOMB_AT.clone().add(PC);
 const HEADER_Y = 0.86; const MOD_Y = -0.15;                                     // on the panel: the header strip, the middle of the module area
 const SEE_SCALE = 1.12; const FEEL_SCALE = 0.8;
 
+// The crew sits in a triangle, the same in every world: the bomb in the middle (turned a little towards the two in front), the Blind in front of it,
+// the Deaf on the Blind's left - he sees the bomb and the Blind on his right and the Mute ahead - and the Mute behind the bomb at his high desk.
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const BOMB_YAW = -0.3;
+const BLIND_AT = new THREE.Vector3(1.5, 0, 1.2); const DEAF_AT = new THREE.Vector3(-2.35, 0, 2.95); const DEAF_SC = 1.25; const BLIND_SC = 0.8;
+const faceBomb = (p) => Math.atan2(BOMB_AT.x - p.x, BOMB_AT.z - p.z);
+const PANEL_TURNED = PANEL_WORLD.clone().sub(BOMB_AT).applyAxisAngle(Y_AXIS, BOMB_YAW).add(BOMB_AT);   // the middle of the panel once the bomb is turned
+const NRM_TURNED = NRM.clone().applyAxisAngle(Y_AXIS, BOMB_YAW);
 // where the camera sits for each role (the fov is worked out from the size of the screen; the Mute's is worked out in fit())
 const RIG = {
-  deaf: { pos: new THREE.Vector3(0.15, 4.35, 4.9), look: new THREE.Vector3(0.1, 1.45, -0.2), fitW: 3.9 },     // a metre higher: the Blind's head no longer covers the bottom of the bomb
-  blind: { pos: PANEL_WORLD.clone().addScaledVector(NRM, 3.9), look: PANEL_WORLD.clone(), fitW: 2.72 },
+  deaf: { pos: DEAF_AT.clone().add(new THREE.Vector3(0, 0.8 * DEAF_SC + 0.1, 0)), look: PANEL_TURNED.clone().add(new THREE.Vector3(0.35, 0.3, -0.45)), fitW: 4.4 },     // his own eyes: where his character stands for the Mute
+  blind: { pos: PANEL_TURNED.clone().addScaledVector(NRM_TURNED, 3.9), look: PANEL_TURNED.clone(), fitW: 2.72 },
   mute: { pos: new THREE.Vector3(0, 9, 8), look: new THREE.Vector3(0, 0.5, 1), fitW: 0 },      // (the Mute's is worked out in fit())
 };
 const BOOK_TILT = 0.5;                                                          // the Mute's book leans back this much on its stand
@@ -77,8 +85,7 @@ const BOOK_TILT = 0.5;                                                          
 const DESK_Y = 1.8; const MUTE_AT = new THREE.Vector3(0.2, DESK_Y, -3.95); const MUTE_SC = 1.25;
 const BOOK_AT = new THREE.Vector3(0.2, DESK_Y, -3.15);
 const EYE = new THREE.Vector3(0.2, DESK_Y + 1.15, -4.3);
-const DESK_FOV = 62; const DESK_LOOK = new THREE.Vector3(0.75, 2.2, 1.0);
-const BLIND_AT = new THREE.Vector3(-0.55, 0, 1.55); const BLIND_SIDE = new THREE.Vector3(-2.15, 0, 1.0); const DEAF_AT = new THREE.Vector3(2.25, 0, 2.2);
+const DESK_FOV = 62; const DESK_LOOK = new THREE.Vector3(-0.4, 1.9, 1.2);
 // his hands: where they are when he holds the book, rests on the desk, or shows a number / a sign (in his character's own frame)
 const HAND_POS = { hold: { l: [0.46, 0.5, 0.95], r: [-0.46, 0.5, 0.95] }, rest: { l: [0.62, 0.3, 0.8], r: [-0.62, 0.3, 0.8] }, show: { l: [0.95, 1.3, 0.55], r: [-0.95, 1.3, 0.55] } };
 const MUTE_FOV = 22; const MUTE_DIST = 9.5; const MUTE_ELEV = 0.55; const MUTE_FILL = 0.8; const MUTE_SHIFT = 0.03;   // how the Mute looks at his book
@@ -140,7 +147,7 @@ export function createWorld(host, opts) {
   add(lampG, new THREE.SphereGeometry(0.11, 12, 8), kit.basic(0xfff0b0), 0, 1.5, 0.05);
 
   // ================================================================= the bomb (a case with a tall panel hinged on top of it)
-  const bomb = new THREE.Group(); bomb.position.copy(BOMB_AT); scene.add(bomb);
+  const bomb = new THREE.Group(); bomb.position.copy(BOMB_AT); bomb.rotation.y = BOMB_YAW; scene.add(bomb);
   const steel = std(0x2b3046, { metalness: 0.6, roughness: 0.4 });
   add(bomb, new THREE.BoxGeometry(2.8, 0.5, 2.1), steel, 0, 0.25, 0);
   const hz = kit.tex(hazardTex());
@@ -174,7 +181,7 @@ export function createWorld(host, opts) {
   let fuseF = -1;
 
   // ---- the same bomb as the Blind knows it: only its edges, in the dark
-  const feel = new THREE.Group(); feel.position.copy(BOMB_AT); scene.add(feel);
+  const feel = new THREE.Group(); feel.position.copy(BOMB_AT); feel.rotation.y = BOMB_YAW; scene.add(feel);
   const lineM = kit.basic(0x5a6390, { transparent: true, opacity: 0.8, depthWrite: false });
   const dimM = kit.basic(0x2c3354, { transparent: true, opacity: 0.7, depthWrite: false });
   const thin = (parent, w, h, d, mat, x, y, z) => add(parent, new THREE.BoxGeometry(w, h, d), mat, x, y, z);
@@ -314,7 +321,7 @@ export function createWorld(host, opts) {
   const burst = makePool(190, { size: 0.17 }); burst.grav = 7; scene.add(burst.pts);
   const fireball = add(scene, new THREE.SphereGeometry(1, 24, 16), kit.basic(0xfb923c, { transparent: true, opacity: 0, depthWrite: false }));
   fireball.visible = false; fireball.position.set(0, 0.9, BOMB_AT.z);
-  const tmpC = new THREE.Color();
+  const tmpC = new THREE.Color(); const tmpW = new THREE.Vector3();
 
   // ================================================================= state
   let model = null; let mood = 'calm'; let moodAt = 0; let at = Date.now();
@@ -417,10 +424,10 @@ export function createWorld(host, opts) {
     scene.background.setHex(BG[role]); scene.fog.color.setHex(BG[role]);
     hemi.visible = key.visible = lampLight.visible = !blind;
     Object.values(chars).forEach((c) => { c.g.visible = false; });
-    // Deaf's world: the Blind sits in front of the bomb (his back to us, his hands resting on the table), the Mute stands behind it at his high desk
-    // Mute's world: the Blind sits at the bomb, facing him, and the Deaf stands at the side watching
-    if (role === 'deaf') { put('blind', BLIND_AT, Math.PI, 0.72); put('mute', MUTE_AT, 0, MUTE_SC); }
-    if (mute) { put('blind', BLIND_SIDE, Math.atan2(BOMB_AT.x - BLIND_SIDE.x, BOMB_AT.z - BLIND_SIDE.z), 0.8); put('deaf', DEAF_AT, Math.atan2(BOMB_AT.x - DEAF_AT.x, BOMB_AT.z - DEAF_AT.z), 0.95); ensureCss(); }
+    // Deaf's world: the bomb in front of him, the Blind sitting at it on his right, the Mute behind it at his high desk
+    // Mute's world (book down): the back of the bomb, the Blind on one side of it and the Deaf on the other, both facing the bomb
+    if (role === 'deaf') { put('blind', BLIND_AT, faceBomb(BLIND_AT), BLIND_SC); put('mute', MUTE_AT, 0, MUTE_SC); }
+    if (mute) { put('blind', BLIND_AT, faceBomb(BLIND_AT), BLIND_SC); put('deaf', DEAF_AT, faceBomb(DEAF_AT), DEAF_SC); ensureCss(); }
     if (css) css.domElement.style.display = mute ? '' : 'none';
     bookRoot.visible = mute; deskRoot.visible = false; fpRoot.visible = false; badge.visible = false;
     canvas.style.touchAction = role === 'deaf' ? 'pan-y' : 'none';
@@ -599,7 +606,7 @@ export function createWorld(host, opts) {
       sparkLight.intensity = burning ? 6 + Math.sin(t * 40) * 2 + Math.random() * 2 : 0;
       if (burning && Math.random() < 0.9) {
         const sp = spark.position;
-        emit(sparks, bomb.position.x + sp.x, bomb.position.y + sp.y, bomb.position.z + sp.z, (Math.random() - 0.5) * 1.2, 0.6 + Math.random() * 1.4, (Math.random() - 0.5) * 1.2, 0.35 + Math.random() * 0.35, tmpC.set(Math.random() < 0.5 ? '#ffc766' : '#ff8a3c'));
+        bomb.localToWorld(tmpW.copy(sp)); emit(sparks, tmpW.x, tmpW.y, tmpW.z, (Math.random() - 0.5) * 1.2, 0.6 + Math.random() * 1.4, (Math.random() - 0.5) * 1.2, 0.35 + Math.random() * 0.35, tmpC.set(Math.random() < 0.5 ? '#ffc766' : '#ff8a3c'));
       }
       bomb.visible = !lost;
       bomb.rotation.z = mood === 'hit' ? Math.sin(t * 50) * 0.02 * Math.exp(-since * 5) : 0;
