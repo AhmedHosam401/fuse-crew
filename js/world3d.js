@@ -66,26 +66,27 @@ const PANEL_WORLD = BOMB_AT.clone().add(PC);
 const HEADER_Y = 0.86; const MOD_Y = -0.15;                                     // on the panel: the header strip, the middle of the module area
 const SEE_SCALE = 1.12; const FEEL_SCALE = 0.8;
 
-// The crew sits in a triangle, the same in every world: the bomb in the middle (turned a little towards the two in front), the Blind in front of it,
-// the Deaf on the Blind's left - he sees the bomb and the Blind on his right and the Mute ahead - and the Mute behind the bomb at his high desk.
+// The crew sits around the bomb like in the original game, all on the same level (nobody is raised): the Blind in front of it, the Deaf on the Blind's left
+// (he sees the bomb from the side, the Blind on his right and the Mute ahead), the Mute across from them, beside the back of the bomb so it never covers him.
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
-const BOMB_YAW = -0.3;
-const BLIND_AT = new THREE.Vector3(1.5, 0, 1.2); const DEAF_AT = new THREE.Vector3(-2.35, 0, 2.95); const DEAF_SC = 1.25; const BLIND_SC = 0.8;
+const BOMB_YAW = -0.18;
+const CREW_SC = 1.2;
+const BLIND_AT = new THREE.Vector3(2.6, 0, 0.86); const DEAF_AT = new THREE.Vector3(-2.32, 0, 3.46);
 const faceBomb = (p) => Math.atan2(BOMB_AT.x - p.x, BOMB_AT.z - p.z);
 const PANEL_TURNED = PANEL_WORLD.clone().sub(BOMB_AT).applyAxisAngle(Y_AXIS, BOMB_YAW).add(BOMB_AT);   // the middle of the panel once the bomb is turned
 const NRM_TURNED = NRM.clone().applyAxisAngle(Y_AXIS, BOMB_YAW);
 // where the camera sits for each role (the fov is worked out from the size of the screen; the Mute's is worked out in fit())
 const RIG = {
-  deaf: { pos: DEAF_AT.clone().add(new THREE.Vector3(0, 0.8 * DEAF_SC + 0.1, 0)), look: PANEL_TURNED.clone().add(new THREE.Vector3(0.35, 0.3, -0.45)), fitW: 4.4 },     // his own eyes: where his character stands for the Mute
+  deaf: { pos: DEAF_AT.clone().add(new THREE.Vector3(0, 0.8 * CREW_SC + 0.1, 0)), look: PANEL_TURNED.clone().add(new THREE.Vector3(0.2, 0.3, -0.1)), fitW: 5.8 },     // his own eyes: where his character stands for the Mute
   blind: { pos: PANEL_TURNED.clone().addScaledVector(NRM_TURNED, 3.9), look: PANEL_TURNED.clone(), fitW: 2.72 },
   mute: { pos: new THREE.Vector3(0, 9, 8), look: new THREE.Vector3(0, 0.5, 1), fitW: 0 },      // (the Mute's is worked out in fit())
 };
 const BOOK_TILT = 0.5;                                                          // the Mute's book leans back this much on its stand
-// the Mute: a high desk at the back of the room (the Deaf sees him above the bomb); his eyes, and where he looks when the book is down
-const DESK_Y = 1.8; const MUTE_AT = new THREE.Vector3(0.2, DESK_Y, -3.95); const MUTE_SC = 1.25;
-const BOOK_AT = new THREE.Vector3(0.2, DESK_Y, -3.15);
-const EYE = new THREE.Vector3(0.2, DESK_Y + 1.15, -4.3);
-const DESK_FOV = 62; const DESK_LOOK = new THREE.Vector3(-0.4, 1.9, 1.2);
+// the Mute: across from the other two on the same floor; his eyes, and where he looks when the book is down (at the bomb, the Deaf and the Blind beside it)
+const DESK_Y = 0; const MUTE_AT = new THREE.Vector3(-1.23, DESK_Y, -3.76); const MUTE_SC = CREW_SC;
+const BOOK_AT = new THREE.Vector3(MUTE_AT.x, DESK_Y, MUTE_AT.z + 0.8);
+const EYE = new THREE.Vector3(MUTE_AT.x, DESK_Y + 1.15, MUTE_AT.z - 0.35);
+const DESK_FOV = 70; const DESK_LOOK = new THREE.Vector3(0, 1.0, -0.3);
 // his hands: where they are when he holds the book, rests on the desk, or shows a number / a sign (in his character's own frame)
 const HAND_POS = { hold: { l: [0.46, 0.5, 0.95], r: [-0.46, 0.5, 0.95] }, rest: { l: [0.62, 0.3, 0.8], r: [-0.62, 0.3, 0.8] }, show: { l: [0.95, 1.3, 0.55], r: [-0.95, 1.3, 0.55] } };
 const MUTE_FOV = 22; const MUTE_DIST = 9.5; const MUTE_ELEV = 0.55; const MUTE_FILL = 0.8; const MUTE_SHIFT = 0.03;   // how the Mute looks at his book
@@ -106,7 +107,7 @@ export function createWorld(host, opts) {
   // ================================================================= lights
   const hemi = new THREE.HemisphereLight(0xb8c4ff, 0x20243a, 1.0); scene.add(hemi);
   const key = new THREE.DirectionalLight(0xfff1d8, 2.0); key.position.set(3, 6, 5); scene.add(key);
-  const lampLight = new THREE.PointLight(0xffb766, 14, 10, 1.5); lampLight.position.set(-2.5, 1.9, -1.2); scene.add(lampLight);
+  const lampLight = new THREE.PointLight(0xffb766, 14, 10, 1.5); lampLight.position.set(3.0, 1.9, -2.4); scene.add(lampLight);
   const alarm = new THREE.PointLight(0xff2a2a, 0, 16, 1.5); alarm.position.set(0, 2.4, 2.4); scene.add(alarm);
   const happy = new THREE.PointLight(0x4ade80, 0, 16, 1.5); happy.position.set(0, 2.4, 2.4); scene.add(happy);
 
@@ -123,24 +124,16 @@ export function createWorld(host, opts) {
   wood.wrapS = wood.wrapT = THREE.RepeatWrapping; wood.repeat.set(3, 2);
   add(room, new THREE.BoxGeometry(7.4, 0.3, 8.8), std(0xffffff, { map: wood, roughness: 0.8 }), 0, -0.15, -0.2);
   add(room, new THREE.BoxGeometry(7.6, 0.06, 9.0), std(0x2a1f18, { roughness: 0.9 }), 0, -0.32, -0.2);
-  {                                                         // the Mute's high desk at the back: a front board, a top and a shelf under it
-    const dw = std(0x6b4a34, { roughness: 0.75 }); const dd = std(0x3a2a1e, { roughness: 0.9 });
-    add(room, new THREE.BoxGeometry(3.8, DESK_Y, 0.16), dw, MUTE_AT.x, DESK_Y / 2, -2.65);
-    add(room, new THREE.BoxGeometry(3.9, 0.12, 1.7), dw, MUTE_AT.x, DESK_Y - 0.06, -3.45);
-    add(room, new THREE.BoxGeometry(3.8, 0.1, 0.1), dd, MUTE_AT.x, DESK_Y - 0.2, -2.55);
-    [-1, 1].forEach((sx) => add(room, new THREE.BoxGeometry(0.16, DESK_Y, 1.7), dd, MUTE_AT.x + sx * 1.9, DESK_Y / 2, -3.45));
-    add(room, new THREE.BoxGeometry(3.7, DESK_Y - 0.1, 1.6), dd, MUTE_AT.x, (DESK_Y - 0.1) / 2, -3.45);
-  }
   const wall = add(room, new THREE.PlaneGeometry(16, 7), std(0x1a1e33, { roughness: 1 }), 0, 2.2, -4.6);
   // shelves + crates on the back wall, to give the room some depth
   [[-3.6, 0.6, -4.2, 1.1, 1.2], [-2.2, 0.35, -4.3, 0.8, 0.7], [3.4, 0.55, -4.2, 1.2, 1.1], [2.0, 0.3, -4.3, 0.7, 0.6]].forEach(([x, y, z, w, h], i) => {
     add(room, new THREE.BoxGeometry(w, h, 0.8), std(i % 2 ? 0x3b3f5c : 0x4a3a2c, { roughness: 0.9 }), x, y, z);
   });
   // a mug, a stack of paper and the desk lamp
-  add(room, new THREE.CylinderGeometry(0.16, 0.14, 0.26, 20), std(0xd8d4c8), -2.55, 0.13, 1.55);
-  add(room, new THREE.BoxGeometry(0.7, 0.05, 0.9), std(0xece6d2), 2.5, 0.025, 1.45).rotation.y = 0.3;
-  add(room, new THREE.BoxGeometry(0.66, 0.05, 0.86), std(0xe2dcc6), 2.52, 0.075, 1.43).rotation.y = 0.2;
-  const lampG = new THREE.Group(); lampG.position.set(-2.6, 0, -1.2); room.add(lampG);
+  add(room, new THREE.CylinderGeometry(0.16, 0.14, 0.26, 20), std(0xd8d4c8), -3.3, 0.13, 0.3);
+  add(room, new THREE.BoxGeometry(0.7, 0.05, 0.9), std(0xece6d2), 3.0, 0.025, 2.6).rotation.y = 0.3;
+  add(room, new THREE.BoxGeometry(0.66, 0.05, 0.86), std(0xe2dcc6), 3.02, 0.075, 2.58).rotation.y = 0.2;
+  const lampG = new THREE.Group(); lampG.position.set(3.2, 0, -2.6); room.add(lampG);
   add(lampG, new THREE.CylinderGeometry(0.28, 0.32, 0.08, 20), std(0x2b3046, { metalness: 0.6 }), 0, 0.04, 0);
   add(lampG, new THREE.CylinderGeometry(0.04, 0.04, 1.5, 8), std(0x2b3046, { metalness: 0.6 }), 0, 0.8, 0);
   add(lampG, new THREE.ConeGeometry(0.34, 0.36, 24, 1, true), std(0xfacc6b, { side: THREE.DoubleSide, emissive: 0x7a5a10, emissiveIntensity: 0.5 }), 0, 1.6, 0.05);
@@ -305,7 +298,7 @@ export function createWorld(host, opts) {
     const DT = 0.16; const db = makeBook(0.62, 0.8, deskKit, { text: true });
     const tilt = new THREE.Group(); tilt.rotation.x = DT; tilt.add(db.group); deskRoot.add(tilt);
     tilt.traverse((m) => { if (m.isMesh) { m.userData.deskBook = true; deskHits.push(m); } });
-    deskRoot.rotation.y = Math.PI; deskRoot.position.set(BOOK_AT.x, DESK_Y + (db.T + db.C) * Math.cos(DT) + (0.4 + db.over) * Math.sin(DT), -3.0);
+    deskRoot.rotation.y = Math.PI; deskRoot.position.set(BOOK_AT.x, DESK_Y + (db.T + db.C) * Math.cos(DT) + (0.4 + db.over) * Math.sin(DT), BOOK_AT.z + 0.15);
   }
   // (c) the one the Deaf sees him hold up in front of his chest (we see its back cover)
   const miniKit = makeKit(); const miniRoot = new THREE.Group(); chars.mute.inner.add(miniRoot);
@@ -424,10 +417,10 @@ export function createWorld(host, opts) {
     scene.background.setHex(BG[role]); scene.fog.color.setHex(BG[role]);
     hemi.visible = key.visible = lampLight.visible = !blind;
     Object.values(chars).forEach((c) => { c.g.visible = false; });
-    // Deaf's world: the bomb in front of him, the Blind sitting at it on his right, the Mute behind it at his high desk
+    // Deaf's world: the bomb ahead of him, the Blind in front of it on his right, the Mute across from him
     // Mute's world (book down): the back of the bomb, the Blind on one side of it and the Deaf on the other, both facing the bomb
-    if (role === 'deaf') { put('blind', BLIND_AT, faceBomb(BLIND_AT), BLIND_SC); put('mute', MUTE_AT, 0, MUTE_SC); }
-    if (mute) { put('blind', BLIND_AT, faceBomb(BLIND_AT), BLIND_SC); put('deaf', DEAF_AT, faceBomb(DEAF_AT), DEAF_SC); ensureCss(); }
+    if (role === 'deaf') { put('blind', BLIND_AT, faceBomb(BLIND_AT), CREW_SC); put('mute', MUTE_AT, 0, MUTE_SC); }
+    if (mute) { put('blind', BLIND_AT, faceBomb(BLIND_AT), CREW_SC); put('deaf', DEAF_AT, faceBomb(DEAF_AT), CREW_SC); ensureCss(); }
     if (css) css.domElement.style.display = mute ? '' : 'none';
     bookRoot.visible = mute; deskRoot.visible = false; fpRoot.visible = false; badge.visible = false;
     canvas.style.touchAction = role === 'deaf' ? 'pan-y' : 'none';
@@ -468,7 +461,7 @@ export function createWorld(host, opts) {
     } else {
       const rig = RIG[role];
       const dist = rig.pos.distanceTo(rig.look);
-      camera.fov = Math.min(72, Math.max(30, (2 * Math.atan(rig.fitW / 2 / camera.aspect / dist) * 180) / Math.PI));
+      camera.fov = Math.min(role === 'deaf' ? 86 : 72, Math.max(30, (2 * Math.atan(rig.fitW / 2 / camera.aspect / dist) * 180) / Math.PI));
       camera.updateProjectionMatrix();
     }
   }
@@ -655,7 +648,7 @@ export function createWorld(host, opts) {
         });
         const n = down ? countOf(hv[0] | 0, hv[1] | 0) : null;
         badge.visible = n !== null;
-        if (n !== null) { badge.material.map = badgeMap(n); badge.material.needsUpdate = true; badge.scale.setScalar(0.72); badge.position.set(MUTE_AT.x - 1.3, DESK_Y + 1.55, MUTE_AT.z + 0.4); }
+        if (n !== null) { badge.material.map = badgeMap(n); badge.material.needsUpdate = true; badge.scale.setScalar(0.72); badge.position.set(MUTE_AT.x - 1.3, DESK_Y + 1.8, MUTE_AT.z + 0.4); }
       } else badge.visible = false;
       if (mute) {
         const P = remote.deaf || {};
@@ -783,6 +776,35 @@ export function createWorld(host, opts) {
       muteHead: [+chars.mute.look.y.toFixed(2), +chars.mute.look.p.toFixed(2)], deafHead: [+chars.deaf.look.y.toFixed(2), +chars.deaf.look.p.toFixed(2)],
       muteHands: ['l', 'r'].map((sd) => +chars.mute.hp[sd].y.toFixed(2)), badge: badge.visible,
     }),
+    // test hook: how much of each other character the current camera really sees (inside the frame, and not hidden behind something)
+    probe() {
+      camera.updateMatrixWorld(); const rc = new THREE.Raycaster(); const out = {};
+      const shown = (o) => { for (let n = o; n; n = n.parent) if (n.visible === false) return false; return true; };
+      const owner = (o, g) => { for (let n = o; n; n = n.parent) if (n === g) return true; return false; };
+      const camRight = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0); const camUp = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+      const targets = [room, bomb, ...Object.values(chars).map((c) => c.g)];
+      Object.entries(chars).forEach(([r, c]) => {
+        if (!c.g.visible) return;
+        const sc = c.g.scale.x; const hd = new THREE.Vector3(); c.head.getWorldPosition(hd); hd.y += 0.7 * sc;
+        const pts = [[0, 0], [0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.4]].map(([a, b]) => hd.clone().addScaledVector(camRight, a * sc).addScaledVector(camUp, b * sc));
+        let inF = 0; let clear = 0;
+        pts.forEach((pt) => {
+          const nd = pt.clone().project(camera); const inside = Math.abs(nd.x) < 0.97 && Math.abs(nd.y) < 0.97 && nd.z < 1; if (inside) inF++;
+          const d = pt.clone().sub(camera.position); const len = d.length(); rc.set(camera.position, d.normalize()); rc.far = len - 0.02;
+          const blocked = rc.intersectObjects(targets, true).some((h) => shown(h.object) && !owner(h.object, c.g) && h.object.isMesh);
+          if (inside && !blocked) clear++;
+        });
+        const nd = hd.clone().project(camera);
+        out[r] = { x: +nd.x.toFixed(2), y: +nd.y.toFixed(2), inFrame: inF, clear };
+      });
+      if (bomb.visible) {                                                    // the panel: how wide it is on the screen and how slanted we see it
+        const ax = new THREE.Vector3(1, 0, 0); const ay = new THREE.Vector3(0, Math.cos(LEAN), -Math.sin(LEAN)); let lo = 9; let hi = -9;
+        [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => { const w = bomb.localToWorld(PC.clone().addScaledVector(ax, a * 1.28).addScaledVector(ay, b * 1.08)).project(camera); lo = Math.min(lo, w.x); hi = Math.max(hi, w.x); });
+        const dir = PANEL_TURNED.clone().sub(camera.position).normalize();
+        out.panel = { width: +Math.max(0, Math.min(hi, 1) - Math.max(lo, -1)).toFixed(2) / 2, edge: [+lo.toFixed(2), +hi.toFixed(2)], facing: +(-dir.dot(NRM_TURNED)).toFixed(2) };
+      }
+      return out;
+    },
     spread: spreadCtl,
     setDown, setHands(l, r) { myHands = [l | 0, r | 0]; }, sign: showSign, look: (y, p) => { look.y = y; look.p = p; },
     tapFinger: (hand, f) => toggleFinger(hand, f), fingerScreen: (hand, f) => { const h = fingerHit(hand, f); return h ? toScreen(h) : null; }, deskBookScreen: () => toScreen(deskHits[0]), deskBookPoint,
