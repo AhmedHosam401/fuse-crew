@@ -57,7 +57,7 @@ function stepPool(p, dt) {
 }
 
 // the bomb: a case with a tall panel hinged on top of it and leaning back
-const BOMB_AT = new THREE.Vector3(0, 0, -0.3);
+const BOMB_AT = new THREE.Vector3(0.86, 0, -0.07);
 const PANEL_W = 2.56; const PANEL_H = 2.16; const LEAN = 0.55;
 const PIVOT = new THREE.Vector3(0, 0.5, 0.6);                                   // the hinge, on the case (bomb coordinates)
 const PC = new THREE.Vector3(0, PIVOT.y + (PANEL_H / 2) * Math.cos(LEAN), PIVOT.z - (PANEL_H / 2) * Math.sin(LEAN));   // middle of the panel
@@ -66,27 +66,31 @@ const PANEL_WORLD = BOMB_AT.clone().add(PC);
 const HEADER_Y = 0.86; const MOD_Y = -0.15;                                     // on the panel: the header strip, the middle of the module area
 const SEE_SCALE = 1.12; const FEEL_SCALE = 0.8;
 
-// The crew sits around the bomb like in the original game, all on the same level (nobody is raised): the Blind in front of it, the Deaf on the Blind's left
-// (he sees the bomb from the side, the Blind on his right and the Mute ahead), the Mute across from them, beside the back of the bomb so it never covers him.
+// The crew sits around the bomb like in the original game, all on the same level (nobody is raised): the Blind in front of the bomb, the Deaf on the Blind's left,
+// the Mute across from the Deaf. The bomb stands off to the Blind's side, so the line between the Deaf and the Mute (that is how the signs travel) is wide open:
+// the Deaf sees the Mute ahead of him and the bomb on his right; the Mute sees the Deaf ahead and the back of the bomb beside him.
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
-const BOMB_YAW = -0.18;
-const CREW_SC = 1.2;
-const BLIND_AT = new THREE.Vector3(2.6, 0, 0.86); const DEAF_AT = new THREE.Vector3(-2.32, 0, 3.46);
+const BOMB_YAW = -0.4;
+const CREW_SC = 1.2; const MUTE_AT_X = -0.81; const MUTE_AT_Z = -2.18;
+const BLIND_AT = new THREE.Vector3(0.9, 0, 2.5); const DEAF_AT = new THREE.Vector3(-1.8, 0, 2.6);
 const faceBomb = (p) => Math.atan2(BOMB_AT.x - p.x, BOMB_AT.z - p.z);
 const PANEL_TURNED = PANEL_WORLD.clone().sub(BOMB_AT).applyAxisAngle(Y_AXIS, BOMB_YAW).add(BOMB_AT);   // the middle of the panel once the bomb is turned
 const NRM_TURNED = NRM.clone().applyAxisAngle(Y_AXIS, BOMB_YAW);
 // where the camera sits for each role (the fov is worked out from the size of the screen; the Mute's is worked out in fit())
+const DEAF_EYE = DEAF_AT.clone().add(new THREE.Vector3(0, 0.8 * CREW_SC + 0.1, 0));
+const DEAF_AIM = new THREE.Vector3().lerpVectors(PANEL_TURNED, new THREE.Vector3(MUTE_AT_X, 1.2, MUTE_AT_Z), 0.38);   // between the bomb and the Mute: he sees both, and the Mute's signs
+const DEAF_HFOV = 72;                                                           // how wide his picture opens (degrees, across)
 const RIG = {
-  deaf: { pos: DEAF_AT.clone().add(new THREE.Vector3(0, 0.8 * CREW_SC + 0.1, 0)), look: PANEL_TURNED.clone().add(new THREE.Vector3(0.2, 0.3, -0.1)), fitW: 5.8 },     // his own eyes: where his character stands for the Mute
+  deaf: { pos: DEAF_EYE.clone(), look: DEAF_AIM.clone(), fitW: 2 * Math.tan((DEAF_HFOV * Math.PI) / 360) * DEAF_EYE.distanceTo(DEAF_AIM) },     // his own eyes: where his character stands for the Mute
   blind: { pos: PANEL_TURNED.clone().addScaledVector(NRM_TURNED, 3.9), look: PANEL_TURNED.clone(), fitW: 2.72 },
   mute: { pos: new THREE.Vector3(0, 9, 8), look: new THREE.Vector3(0, 0.5, 1), fitW: 0 },      // (the Mute's is worked out in fit())
 };
 const BOOK_TILT = 0.5;                                                          // the Mute's book leans back this much on its stand
 // the Mute: across from the other two on the same floor; his eyes, and where he looks when the book is down (at the bomb, the Deaf and the Blind beside it)
-const DESK_Y = 0; const MUTE_AT = new THREE.Vector3(-1.23, DESK_Y, -3.76); const MUTE_SC = CREW_SC;
+const DESK_Y = 0; const MUTE_AT = new THREE.Vector3(MUTE_AT_X, DESK_Y, MUTE_AT_Z); const MUTE_SC = CREW_SC;
 const BOOK_AT = new THREE.Vector3(MUTE_AT.x, DESK_Y, MUTE_AT.z + 0.8);
 const EYE = new THREE.Vector3(MUTE_AT.x, DESK_Y + 1.15, MUTE_AT.z - 0.35);
-const DESK_FOV = 70; const DESK_LOOK = new THREE.Vector3(0, 1.0, -0.3);
+const DESK_FOV = 70; const DESK_LOOK = new THREE.Vector3().lerpVectors(DEAF_AT, BOMB_AT, 0.4).setY(1.0);
 // his hands: where they are when he holds the book, rests on the desk, or shows a number / a sign (in his character's own frame)
 const HAND_POS = { hold: { l: [0.46, 0.5, 0.95], r: [-0.46, 0.5, 0.95] }, rest: { l: [0.62, 0.3, 0.8], r: [-0.62, 0.3, 0.8] }, show: { l: [0.95, 1.3, 0.55], r: [-0.95, 1.3, 0.55] } };
 const MUTE_FOV = 22; const MUTE_DIST = 9.5; const MUTE_ELEV = 0.55; const MUTE_FILL = 0.8; const MUTE_SHIFT = 0.03;   // how the Mute looks at his book
@@ -313,7 +317,7 @@ export function createWorld(host, opts) {
   const sparks = makePool(60, { size: 0.1 }); scene.add(sparks.pts);
   const burst = makePool(190, { size: 0.17 }); burst.grav = 7; scene.add(burst.pts);
   const fireball = add(scene, new THREE.SphereGeometry(1, 24, 16), kit.basic(0xfb923c, { transparent: true, opacity: 0, depthWrite: false }));
-  fireball.visible = false; fireball.position.set(0, 0.9, BOMB_AT.z);
+  fireball.visible = false; fireball.position.set(BOMB_AT.x, 0.9, BOMB_AT.z);
   const tmpC = new THREE.Color(); const tmpW = new THREE.Vector3();
 
   // ================================================================= state
@@ -382,7 +386,7 @@ export function createWorld(host, opts) {
     const cols = ['#fb923c', '#fde047', '#ef4444', '#9ca3af'].map((c) => new THREE.Color(c));
     for (let i = 0; i < 180; i++) {
       const a = Math.random() * Math.PI * 2; const b = (Math.random() - 0.3) * Math.PI; const sp = 3 + Math.random() * 6;
-      emit(burst, 0, 0.9, BOMB_AT.z, Math.cos(a) * Math.cos(b) * sp, Math.sin(b) * sp + 2, Math.sin(a) * Math.cos(b) * sp, 0.8 + Math.random() * 1.1, cols[i % cols.length]);
+      emit(burst, BOMB_AT.x, 0.9, BOMB_AT.z, Math.cos(a) * Math.cos(b) * sp, Math.sin(b) * sp + 2, Math.sin(a) * Math.cos(b) * sp, 0.8 + Math.random() * 1.1, cols[i % cols.length]);
     }
     boomAt = performance.now(); shake = 1.4; flash = 1.2;
   }
@@ -648,7 +652,7 @@ export function createWorld(host, opts) {
         });
         const n = down ? countOf(hv[0] | 0, hv[1] | 0) : null;
         badge.visible = n !== null;
-        if (n !== null) { badge.material.map = badgeMap(n); badge.material.needsUpdate = true; badge.scale.setScalar(0.72); badge.position.set(MUTE_AT.x - 1.3, DESK_Y + 1.8, MUTE_AT.z + 0.4); }
+        if (n !== null) { badge.material.map = badgeMap(n); badge.material.needsUpdate = true; badge.scale.setScalar(0.72); badge.position.set(MUTE_AT.x + 1.35, DESK_Y + 1.8, MUTE_AT.z + 0.4); }
       } else badge.visible = false;
       if (mute) {
         const P = remote.deaf || {};
